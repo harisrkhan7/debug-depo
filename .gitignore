@@ -99,6 +99,8 @@ ipython_config.py
 #   This is especially recommended for binary packages to ensure reproducibility, and is more
 #   commonly ignored for libraries.
 # uv.lock
+.uv-cache/
+external/
 
 # poetry
 #   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
@@ -216,3 +218,99 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# -------------------------
+# Debug-DEPO ignores
+# -------------------------
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.env
+.env.*
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+logs/
+wandb/
+mlruns/
+
+# Raw and processed data
+data/raw/*
+data/processed/*
+
+# Keep folder placeholders
+!data/raw/.gitkeep
+!data/splits/.gitkeep
+
+# Model checkpoints and weights
+checkpoints/
+experiments/*/checkpoints/
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.ckpt
+
+# Large rollout artifacts
+experiments/*/rollouts/
+experiments/*/online_batches/
+
+# SWE-bench / Docker / runtime artifacts
+logs/build_images/
+logs/run_evaluation/
+evaluation_results/
+.swebench/
+docker_cache/
+apptainer_cache/
+*.sif
+
+# Temporary files
+tmp/
+temp/
+.cache/
+
+# -------------------------
+# Cluster / HPC artifacts
+# -------------------------
+
+# Cluster logs
+cluster/logs/*
+!cluster/logs/.gitkeep
+
+# PBS / SLURM runtime output
+*.o[0-9]*
+*.e[0-9]*
+*.out
+*.err
+
+# Apptainer / Singularity images and cache
+*.sif
+*.sqsh
+apptainer_cache/
+singularity_cache/
+cluster/apptainer/*.sif
+
+# Scratch / temporary cluster outputs
+scratch/
+rds_scratch/
+ephemeral/
+
+# Track portable cluster configuration, but keep machine-specific overrides local.
+!cluster/env/
+cluster/env/*
+!cluster/env/defaults.sh
+!cluster/env/load.sh
+!cluster/env/*.example
+
+# Generated evaluation reports can contain absolute machine paths.
+results/**
+!results/**/
+!results/**/.gitkeep

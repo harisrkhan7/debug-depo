@@ -1,0 +1,55 @@
+[build-system]
+requires = ["uv_build>=0.10.10,<0.11.0"]
+build-backend = "uv_build"
+
+[project]
+name = "debug-depo"
+version = "0.1.0"
+description = "AgentForge SWE-bench Verified reproduction utilities."
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+license = { file = "LICENSE" }
+dependencies = [
+    "datasets>=2.19,<4",
+    "tqdm>=4.66",
+]
+
+[project.scripts]
+debug-depo-rollout = "debug_depo.rollout:main"
+debug-depo-merge-predictions = "debug_depo.metrics:main"
+debug-depo-prepare-tasks = "debug_depo.data:main"
+debug-depo-evaluate = "debug_depo.evaluate:main"
+debug-depo-evaluate-apptainer = "debug_depo.evaluate_apptainer:main"
+debug-depo-analyze-run = "debug_depo.analyze_run:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.6.0",
+]
+notebooks = [
+    "ipykernel>=6.0.0",
+    "ipywidgets>=8.0.0",
+    "jupyterlab>=4.0.0",
+    "matplotlib>=3.8.0",
+    "pandas>=2.0.0",
+]
+swebench = [
+    "docker>=7.0.0",
+    "swebench>=3.0.2",
+]
+
+[tool.uv]
+package = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = [
+    "data",
+    "results",
+    "experiments",
+]

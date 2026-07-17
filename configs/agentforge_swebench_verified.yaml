@@ -1,0 +1,20 @@
+dataset: princeton-nlp/SWE-bench_Verified
+split: test
+model: Kwai-Klear/Klear-AgentForge-8B-SFT
+reported_score: 0.382
+reported_resolved: 191
+reported_total: 500
+rollout:
+  harness: mini-swe-agent-plus
+  workers: 6
+  max_steps: 200
+  context_length: 65536
+  temperature: 0.0
+  top_p: 1.0
+  output_dir: data/processed/agentforge_swebench_verified
+evaluation:
+  run_id: agentforge_8b_sft_verified
+  report_dir: results/swebench
+  max_workers: 10
+  timeout: 1800
+  cache_level: env

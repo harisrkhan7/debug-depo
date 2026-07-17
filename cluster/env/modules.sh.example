@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+# Copy this file to cluster/env/modules.sh and customize it. modules.sh is
+# ignored by Git because module names are site-specific. The scheduled-job
+# bootstrap already loads tools/prod and miniforge/3, then activates the
+# debug-depo Conda env. Add only extra site modules here; do not purge the
+# modules already loaded. On Imperial, tools/prod provides Apptainer directly.
+
+:

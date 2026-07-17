@@ -1,0 +1,6 @@
+dataset: princeton-nlp/SWE-bench_Verified
+split: test
+predictions_path: data/processed/agentforge_swebench_verified/predictions.jsonl
+model: Kwai-Klear/Klear-AgentForge-8B-SFT
+run_id: agentforge_8b_sft_verified
+report_dir: results/swebench

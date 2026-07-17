@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+#PBS -N agentforge-smoke-eval
+#PBS -l select=1:ncpus=4:mem=32gb
+#PBS -l walltime=12:00:00
+#PBS -o cluster/logs/
+#PBS -e cluster/logs/
+
+set -euo pipefail
+cd "$PBS_O_WORKDIR"
+export EVALUATION_MODE=smoke
+export EVAL_MAX_WORKERS="${EVAL_MAX_WORKERS:-2}"
+cluster/run_evaluation_job.sh

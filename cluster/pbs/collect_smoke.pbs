@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+#PBS -N agentforge-verified-smoke
+#PBS -l select=1:ncpus=4:ngpus=1:mem=32gb
+#PBS -l walltime=24:00:00
+#PBS -o cluster/logs/
+#PBS -e cluster/logs/
+
+set -euo pipefail
+cd "$PBS_O_WORKDIR"
+export COLLECTION_MODE=smoke
+cluster/run_collection_job.sh

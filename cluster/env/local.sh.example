@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+# Copy this file to cluster/env/local.sh and customize it. local.sh is ignored
+# by Git. Put the matching host, user, and identity in ~/.ssh/config.
+export REMOTE="${REMOTE:-debug-depo-cluster}"
+
+# Optional path overrides. On the cluster itself, defaults.sh derives scratch
+# from $RDS automatically.
+# export DEBUG_DEPO_SCRATCH="$RDS/ephemeral/debug-depo"
+# export VLLM_IMAGE="$HOME/debug-depo/cluster/apptainer/vllm-openai.sif"

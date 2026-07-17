@@ -1,0 +1,11 @@
+dataset: princeton-nlp/SWE-bench_Verified
+split: test
+model: Kwai-Klear/Klear-AgentForge-8B-SFT
+reported_score: 0.382
+reported_resolved: 191
+reported_total: 500
+harness: mini-swe-agent-plus
+max_steps: 200
+context_length: 65536
+prediction_file: data/processed/agentforge_swebench_verified/predictions.jsonl
+evaluation_run_id: agentforge_8b_sft_verified

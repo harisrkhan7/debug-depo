@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+#PBS -N debug-depo-analysis
+#PBS -l select=1:ncpus=2:mem=8gb
+#PBS -l walltime=01:00:00
+#PBS -o cluster/logs/
+#PBS -e cluster/logs/
+
+set -euo pipefail
+cd "$PBS_O_WORKDIR"
+
+source cluster/load_job_environment.sh
+source cluster/env/load.sh
+
+if [[ -z "${RUN_ROOT:-}" ]]; then
+  if [[ -z "${RUN_NAME:-}" ]]; then
+    echo "Set RUN_NAME or RUN_ROOT when submitting the analysis job." >&2
+    exit 2
+  fi
+  export RUN_ROOT="$DEBUG_DEPO_SCRATCH/runs/$RUN_NAME"
+fi
+
+export ANALYSIS_OUTPUT_DIR="${ANALYSIS_OUTPUT_DIR:-$RUN_ROOT/${ANALYSIS_OUTPUT_SUBDIR:-analysis}}"
+
+scripts/analyze_run.sh

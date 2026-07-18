@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Smoke-test an OpenAI-compatible local LLM server.
 
 The check intentionally uses only the Python standard library so it can run

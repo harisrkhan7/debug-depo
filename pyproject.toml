@@ -21,6 +21,7 @@ debug-depo-prepare-tasks = "debug_depo.data:main"
 debug-depo-evaluate = "debug_depo.evaluate:main"
 debug-depo-evaluate-apptainer = "debug_depo.evaluate_apptainer:main"
 debug-depo-analyze-run = "debug_depo.analyze_run:main"
+debug-depo-check-local-llm = "debug_depo.check_local_llm:main"
 
 [project.optional-dependencies]
 dev = [

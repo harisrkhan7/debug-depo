@@ -5,11 +5,41 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 mkdir -p cluster/logs
 
+print_dry_run_job() {
+  local title="$1"
+  local pbs_script="$2"
+  local detail="$3"
+  local variables="${4//,/$'\n'}"
+  local variable
+
+  printf '%s\n' "$title"
+  printf '  PBS script: %s\n' "$pbs_script"
+  if [[ -n "$detail" ]]; then
+    printf '  %s\n' "$detail"
+  fi
+  printf '  Variables:\n'
+  while IFS= read -r variable; do
+    printf '    %s\n' "$variable"
+  done <<<"$variables"
+  printf '\n'
+}
+
 RUN_NAME="${RUN_NAME:-agentforge-verified-smoke}"
+RUN_ID="${RUN_ID:-${RUN_NAME//-/_}}"
+DATASET="${DATASET:-princeton-nlp/SWE-bench_Verified}"
+SPLIT="${SPLIT:-test}"
+TASK_IDS_FILE="${TASK_IDS_FILE:-}"
 SMOKE_LIMIT="${SMOKE_LIMIT:-5}"
 ROLLOUT_WORKERS="${ROLLOUT_WORKERS:-4}"
 EVAL_MAX_WORKERS="${EVAL_MAX_WORKERS:-2}"
+AGENTFORGE_MODEL="${AGENTFORGE_MODEL:-Kwai-Klear/Klear-AgentForge-8B-SFT}"
+HARNESS="${HARNESS:-mini-swe-agent-plus}"
+MINI_SWE_RUNNER="${MINI_SWE_RUNNER:-singularity}"
+MINI_SWE_ENVIRONMENT_CLASS="${MINI_SWE_ENVIRONMENT_CLASS:-singularity}"
 MAX_STEPS="${MAX_STEPS:-200}"
+CONTEXT_LENGTH="${CONTEXT_LENGTH:-65536}"
+TEMPERATURE="${TEMPERATURE:-0.0}"
+TOP_P="${TOP_P:-1.0}"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-21600}"
 EVAL_TIMEOUT="${EVAL_TIMEOUT:-1800}"
 OVERWRITE="${OVERWRITE:-0}"
@@ -22,12 +52,33 @@ if [[ ! "$RUN_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
   exit 2
 fi
 
+collection_variables="RUN_NAME=$RUN_NAME,DATASET=$DATASET,SPLIT=$SPLIT,SMOKE_LIMIT=$SMOKE_LIMIT,ROLLOUT_WORKERS=$ROLLOUT_WORKERS,AGENTFORGE_MODEL=$AGENTFORGE_MODEL,HARNESS=$HARNESS,MINI_SWE_RUNNER=$MINI_SWE_RUNNER,MINI_SWE_ENVIRONMENT_CLASS=$MINI_SWE_ENVIRONMENT_CLASS,MAX_STEPS=$MAX_STEPS,CONTEXT_LENGTH=$CONTEXT_LENGTH,TEMPERATURE=$TEMPERATURE,TOP_P=$TOP_P,TIMEOUT_SECONDS=$TIMEOUT_SECONDS,OVERWRITE=$OVERWRITE"
+evaluation_variables="RUN_NAME=$RUN_NAME,RUN_ID=$RUN_ID,DATASET=$DATASET,SPLIT=$SPLIT,SMOKE_LIMIT=$SMOKE_LIMIT,EXPECTED_COUNT=$EXPECTED_COUNT,EVAL_MAX_WORKERS=$EVAL_MAX_WORKERS,EVAL_TIMEOUT=$EVAL_TIMEOUT,AGENTFORGE_MODEL=$AGENTFORGE_MODEL"
+if [[ -n "$TASK_IDS_FILE" ]]; then
+  collection_variables+=",TASK_IDS_FILE=$TASK_IDS_FILE"
+  evaluation_variables+=",TASK_IDS_FILE=$TASK_IDS_FILE"
+fi
+analysis_variables="RUN_NAME=$RUN_NAME,EXPECTED_COUNT=$EXPECTED_COUNT,ANALYSIS_SAMPLE_PER_SHARD=2,ANALYSIS_OUTPUT_SUBDIR=analysis-smoke"
+
 if [[ "${DRY_RUN:-0}" == "1" ]]; then
-  echo "qsub -v RUN_NAME=$RUN_NAME,SMOKE_LIMIT=$SMOKE_LIMIT,ROLLOUT_WORKERS=$ROLLOUT_WORKERS,MAX_STEPS=$MAX_STEPS,TIMEOUT_SECONDS=$TIMEOUT_SECONDS,OVERWRITE=$OVERWRITE cluster/pbs/collect_smoke.pbs"
+  printf 'Dry run: no jobs submitted.\n\n'
+  print_dry_run_job \
+    "Collection job" \
+    "cluster/pbs/collect_smoke.pbs" \
+    "" \
+    "$collection_variables"
   if [[ "$SUBMIT_EVAL" == "1" ]]; then
-    echo "qsub -W depend=afterok:<collection-job-id> -v RUN_NAME=$RUN_NAME,SMOKE_LIMIT=$SMOKE_LIMIT,EVAL_MAX_WORKERS=$EVAL_MAX_WORKERS,EVAL_TIMEOUT=$EVAL_TIMEOUT cluster/pbs/evaluate_smoke.pbs"
+    print_dry_run_job \
+      "Evaluation job" \
+      "cluster/pbs/evaluate_smoke.pbs" \
+      "Dependency: successful collection job" \
+      "$evaluation_variables"
     if [[ "$SUBMIT_ANALYSIS" == "1" ]]; then
-      echo "qsub -N debug-depo-analysis-smoke -W depend=afterok:<evaluation-job-id> -v RUN_NAME=$RUN_NAME,EXPECTED_COUNT=$EXPECTED_COUNT,ANALYSIS_SAMPLE_PER_SHARD=2,ANALYSIS_OUTPUT_SUBDIR=analysis-smoke cluster/pbs/analyze_run.pbs"
+      print_dry_run_job \
+        "Analysis job" \
+        "cluster/pbs/analyze_run.pbs" \
+        "Dependency: successful evaluation job" \
+        "$analysis_variables"
     fi
   fi
   exit 0
@@ -39,14 +90,14 @@ if ! command -v qsub >/dev/null 2>&1; then
 fi
 
 collection_job="$(qsub \
-  -v "RUN_NAME=$RUN_NAME,SMOKE_LIMIT=$SMOKE_LIMIT,ROLLOUT_WORKERS=$ROLLOUT_WORKERS,MAX_STEPS=$MAX_STEPS,TIMEOUT_SECONDS=$TIMEOUT_SECONDS,OVERWRITE=$OVERWRITE" \
+  -v "$collection_variables" \
   cluster/pbs/collect_smoke.pbs)"
 echo "Submitted smoke collection: $collection_job"
 
 if [[ "$SUBMIT_EVAL" == "1" ]]; then
   evaluation_job="$(qsub \
     -W "depend=afterok:$collection_job" \
-    -v "RUN_NAME=$RUN_NAME,SMOKE_LIMIT=$SMOKE_LIMIT,EVAL_MAX_WORKERS=$EVAL_MAX_WORKERS,EVAL_TIMEOUT=$EVAL_TIMEOUT" \
+    -v "$evaluation_variables" \
     cluster/pbs/evaluate_smoke.pbs)"
   echo "Submitted dependent smoke evaluation: $evaluation_job"
 

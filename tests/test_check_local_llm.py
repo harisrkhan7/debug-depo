@@ -1,17 +1,6 @@
 from __future__ import annotations
 
-import importlib.util
-import sys
-from pathlib import Path
-
-
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "check_local_llm.py"
-SPEC = importlib.util.spec_from_file_location("check_local_llm", SCRIPT)
-assert SPEC is not None
-check_local_llm = importlib.util.module_from_spec(SPEC)
-assert SPEC.loader is not None
-sys.modules[SPEC.name] = check_local_llm
-SPEC.loader.exec_module(check_local_llm)
+from debug_depo import check_local_llm
 
 
 def test_normalize_base_url_strips_trailing_slashes() -> None:

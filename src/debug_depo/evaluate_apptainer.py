@@ -393,7 +393,12 @@ def run_apptainer_evaluation(args: argparse.Namespace) -> dict[str, Any]:
     summary = {
         "report_path": str(report_path),
         "results": results,
-        **summarize_report(report),
+        **summarize_report(
+            report,
+            dataset=args.dataset,
+            split=args.split,
+            model=args.model,
+        ),
     }
     if args.summary_output:
         write_json(args.summary_output, summary)

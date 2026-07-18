@@ -16,6 +16,8 @@ from typing import Any
 from debug_depo.constants import (
     DEFAULT_CONTEXT_LENGTH,
     DEFAULT_MAX_STEPS,
+    DEFAULT_SWEBENCH_DATASET,
+    DEFAULT_SWEBENCH_SPLIT,
     DEFAULT_TEMPERATURE,
     DEFAULT_TOP_P,
 )
@@ -45,11 +47,19 @@ SWEBENCH_TESTBED_PATH = (
     "/opt/miniconda3/bin:"
     "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 )
+MINISWE_SUBSET_ALIASES = {
+    "princeton-nlp/swe-bench": "full",
+    "princeton-nlp/swe-bench_lite": "lite",
+    "princeton-nlp/swe-bench_verified": "verified",
+    "swe-bench/swe-smith": "smith",
+}
 
 
 @dataclass(frozen=True)
 class AgentForgeConfig:
     model: str
+    dataset: str = DEFAULT_SWEBENCH_DATASET
+    split: str = DEFAULT_SWEBENCH_SPLIT
     llm_base_url: str | None = None
     llm_api_key: str | None = None
     harness: str = "command"
@@ -78,6 +88,12 @@ class AgentForgeRunError(RuntimeError):
 class _FormatMap(dict[str, str]):
     def __missing__(self, key: str) -> str:
         raise KeyError(f"Unknown AgentForge command template field: {key}")
+
+
+def miniswe_subset(dataset: str) -> str:
+    """Return mini-swe's stable alias for known datasets, or the dataset path itself."""
+
+    return MINISWE_SUBSET_ALIASES.get(dataset.lower(), dataset)
 
 
 def prediction_record(instance: dict[str, Any], model: str, patch: str) -> dict[str, str]:
@@ -271,9 +287,9 @@ def render_miniswe_command(
         "--model",
         model,
         "--subset",
-        "verified",
+        miniswe_subset(config.dataset),
         "--split",
-        "test",
+        config.split,
         "--output",
         str(output_dir),
         "--config",

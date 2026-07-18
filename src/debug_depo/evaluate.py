@@ -7,10 +7,12 @@ import json
 import platform
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from debug_depo.constants import (
+    DEFAULT_AGENTFORGE_MODEL,
     DEFAULT_SWEBENCH_DATASET,
     DEFAULT_SWEBENCH_SPLIT,
     TARGET_VERIFIED_RESOLVED,
@@ -19,6 +21,30 @@ from debug_depo.constants import (
 )
 from debug_depo.data import read_instance_ids_file
 from debug_depo.utils import ensure_dir, load_hf_token_from_file, read_json, write_json
+
+
+@dataclass(frozen=True)
+class EvaluationTarget:
+    name: str
+    dataset: str
+    split: str
+    model: str
+    score: float
+    resolved: int
+    total: int
+
+
+EVALUATION_TARGETS = (
+    EvaluationTarget(
+        name="klear-agentforge-8b-sft-swe-bench-verified",
+        dataset=DEFAULT_SWEBENCH_DATASET,
+        split=DEFAULT_SWEBENCH_SPLIT,
+        model=DEFAULT_AGENTFORGE_MODEL,
+        score=TARGET_VERIFIED_SCORE,
+        resolved=TARGET_VERIFIED_RESOLVED,
+        total=TARGET_VERIFIED_TOTAL,
+    ),
+)
 
 
 def model_report_name(model: str, run_id: str) -> str:
@@ -96,10 +122,41 @@ def load_report(report_dir: str | Path, model: str, run_id: str) -> dict[str, An
     return payload if isinstance(payload, dict) else None
 
 
-def summarize_report(report: dict[str, Any] | None) -> dict[str, Any]:
+def evaluation_target(
+    *,
+    dataset: str,
+    split: str,
+    model: str,
+    total: int,
+    submitted: int,
+) -> EvaluationTarget | None:
+    """Return a paper target only when the complete evaluation setup matches."""
+
+    normalized = (dataset.casefold(), split.casefold(), model.casefold())
+    for target in EVALUATION_TARGETS:
+        target_key = (
+            target.dataset.casefold(),
+            target.split.casefold(),
+            target.model.casefold(),
+        )
+        if normalized == target_key and total == target.total and submitted == target.total:
+            return target
+    return None
+
+
+def summarize_report(
+    report: dict[str, Any] | None,
+    *,
+    dataset: str = DEFAULT_SWEBENCH_DATASET,
+    split: str = DEFAULT_SWEBENCH_SPLIT,
+    model: str = DEFAULT_AGENTFORGE_MODEL,
+) -> dict[str, Any]:
     if not report:
         return {
             "status": "missing_report",
+            "dataset": dataset,
+            "split": split,
+            "model": model,
             "resolved_instances": 0,
             "submitted_instances": 0,
             "resolution_rate": 0.0,
@@ -108,8 +165,18 @@ def summarize_report(report: dict[str, Any] | None) -> dict[str, Any]:
     resolved = int(report.get("resolved_instances", 0))
     total = int(report.get("total_instances", submitted))
     denominator = submitted or total or 1
-    return {
+    target = evaluation_target(
+        dataset=dataset,
+        split=split,
+        model=model,
+        total=total,
+        submitted=submitted,
+    )
+    summary = {
         "status": "ok",
+        "dataset": dataset,
+        "split": split,
+        "model": model,
         "total_instances": total,
         "submitted_instances": submitted,
         "completed_instances": int(report.get("completed_instances", 0)),
@@ -118,13 +185,13 @@ def summarize_report(report: dict[str, Any] | None) -> dict[str, Any]:
         "empty_patch_instances": int(report.get("empty_patch_instances", 0)),
         "error_instances": int(report.get("error_instances", 0)),
         "resolution_rate": resolved / denominator,
-        "target_score": TARGET_VERIFIED_SCORE,
-        "target_resolved": TARGET_VERIFIED_RESOLVED,
-        "target_total": TARGET_VERIFIED_TOTAL,
-        "resolved_delta_vs_target": resolved - TARGET_VERIFIED_RESOLVED
-        if total == TARGET_VERIFIED_TOTAL
-        else None,
+        "target_name": target.name if target else None,
+        "target_score": target.score if target else None,
+        "target_resolved": target.resolved if target else None,
+        "target_total": target.total if target else None,
+        "resolved_delta_vs_target": resolved - target.resolved if target else None,
     }
+    return summary
 
 
 def collect_instance_ids(args: argparse.Namespace) -> list[str]:
@@ -152,7 +219,12 @@ def run_evaluation(args: argparse.Namespace) -> dict[str, Any]:
         "command": command,
         "returncode": completed.returncode,
         "report_path": str(report_path),
-        **summarize_report(report),
+        **summarize_report(
+            report,
+            dataset=args.dataset,
+            split=args.split,
+            model=args.model,
+        ),
     }
     if args.summary_output:
         write_json(args.summary_output, summary)

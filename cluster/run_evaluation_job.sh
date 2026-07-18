@@ -20,7 +20,7 @@ case "$EVALUATION_MODE" in
     DEFAULT_EVAL_TIMEOUT=1800
     EXPECTED_SHARDS=1
     EVAL_LIMIT="${SMOKE_LIMIT:-5}"
-    EXPECTED_PREDICTIONS="$EVAL_LIMIT"
+    EXPECTED_PREDICTIONS="${EXPECTED_COUNT:-$EVAL_LIMIT}"
     RUN_ID="${RUN_ID:-agentforge_verified_smoke}"
     ;;
   full)
@@ -29,7 +29,7 @@ case "$EVALUATION_MODE" in
     DEFAULT_EVAL_TIMEOUT=3600
     EXPECTED_SHARDS="${NUM_SHARDS:-10}"
     EVAL_LIMIT=""
-    EXPECTED_PREDICTIONS=500
+    EXPECTED_PREDICTIONS="${EXPECTED_COUNT:-500}"
     RUN_ID="${RUN_ID:-agentforge_verified_full}"
     ;;
   *)
@@ -38,6 +38,8 @@ case "$EVALUATION_MODE" in
     ;;
 esac
 
+export DATASET="${DATASET:-princeton-nlp/SWE-bench_Verified}"
+export SPLIT="${SPLIT:-test}"
 RUN_ROOT="${RUN_ROOT:-$DEBUG_DEPO_SCRATCH/runs/$RUN_NAME}"
 SHARD_ROOT="${SHARD_ROOT:-$RUN_ROOT/rollouts}"
 MERGED_DIR="${MERGED_DIR:-$RUN_ROOT/merged}"
@@ -89,6 +91,8 @@ fi
 cat <<MSG
 Starting $EVALUATION_MODE Apptainer evaluation
   run:        $RUN_NAME
+  dataset:    $DATASET
+  split:      $SPLIT
   predictions: $PREDICTIONS_PATH
   workers:    $MAX_WORKERS
   reports:    $REPORT_DIR

@@ -118,6 +118,7 @@ def test_render_miniswe_command_uses_official_module_and_filter(tmp_path):
 
     assert "minisweagent.run.extra.swebench_pool_way" in command
     assert "--subset verified" in command
+    assert "--split test" in command
     assert "--filter '^repo__repo\\-1$'" in command
     parts = shlex.split(command)
     generated_config_path = parts[parts.index("--config") + 1]
@@ -127,6 +128,30 @@ def test_render_miniswe_command_uses_official_module_and_filter(tmp_path):
     assert generated_config["model"]["model_kwargs"]["top_p"] == 0.8
     assert default_miniswe_model("org/model") == "hosted_vllm/org/model"
     assert default_miniswe_model("hosted_vllm/org/model") == "hosted_vllm/org/model"
+
+
+def test_render_miniswe_command_uses_configured_dataset_and_split(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        yaml.safe_dump({"agent": {}, "model": {"model_kwargs": {}}}),
+        encoding="utf-8",
+    )
+    config = AgentForgeConfig(
+        model="model",
+        dataset="SWE-bench/SWE-smith-py",
+        split="train",
+        mini_config=str(config_path),
+    )
+
+    command = render_miniswe_command(
+        instance=instance(),
+        output_dir=tmp_path,
+        config=config,
+    )
+
+    parts = shlex.split(command)
+    assert parts[parts.index("--subset") + 1] == "SWE-bench/SWE-smith-py"
+    assert parts[parts.index("--split") + 1] == "train"
 
 
 def test_render_miniswe_command_can_use_singularity_runner(tmp_path, monkeypatch):

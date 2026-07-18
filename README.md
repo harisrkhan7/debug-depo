@@ -22,6 +22,45 @@ is their official `mini-swe-agent-plus` repository. This project wraps that
 installed package, records per-instance trajectories, emits the official
 SWE-bench prediction JSONL format, and launches the official SWE-bench evaluator.
 
+## Evaluation defaults and future dataset roles
+
+The existing workflow is the evaluation setup. Its defaults remain:
+
+```text
+DATASET=princeton-nlp/SWE-bench_Verified
+SPLIT=test
+EXPECTED_COUNT=500
+```
+
+Collection passes the configured dataset and split to mini-swe-agent-plus, and
+the cluster submission scripts pass the same values to dependent evaluation
+jobs. The run directory structure and Verified output paths are unchanged.
+
+Future training and validation runs can use the same pipeline by setting a
+different dataset, split, immutable instance-ID file, expected count, and run
+name:
+
+```bash
+DATASET=org/dataset \
+SPLIT=train \
+TASK_IDS_FILE=data/splits/train_instance_ids.txt \
+EXPECTED_COUNT=1000 \
+NUM_SHARDS=10 \
+RUN_NAME=training-rollouts-v1 \
+DRY_RUN=1 \
+cluster/submit_full.sh
+```
+
+Use a distinct `RUN_NAME` for every dataset role. `RUN_ID` defaults to the run
+name with dashes replaced by underscores and can still be set explicitly.
+`NUM_SHARDS` cannot exceed `EXPECTED_COUNT`, ensuring that every scheduled
+collection shard receives at least one task.
+
+Evaluation summaries compare against the paper's 38.2% (191/500) target only
+for the complete default SWE-bench Verified `test` evaluation with the
+AgentForge model. Other datasets, splits, models, and partial evaluations retain
+their measured results but leave the target-comparison fields empty.
+
 ## Install
 
 ```bash
@@ -84,7 +123,7 @@ Before launching the SWE harness, verify that the local server can both list
 models and generate a tiny chat completion:
 
 ```bash
-python3 scripts/check_local_llm.py \
+PYTHONPATH=src python3 -m debug_depo.check_local_llm \
   --base-url http://127.0.0.1:8000/v1 \
   --model mlx-community/Qwen2.5-Coder-7B-Instruct-4bit
 ```

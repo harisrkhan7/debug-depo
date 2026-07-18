@@ -55,8 +55,76 @@ def test_summarize_report_compares_full_verified_target():
     )
 
     assert summary["resolution_rate"] == 191 / 500
+    assert summary["target_name"] == "klear-agentforge-8b-sft-swe-bench-verified"
     assert summary["resolved_delta_vs_target"] == 0
     assert model_report_name("org/model", "run") == "org__model.run.json"
+
+
+def test_summarize_report_omits_verified_target_for_other_evaluation_setups():
+    report = {
+        "total_instances": 100,
+        "submitted_instances": 100,
+        "completed_instances": 100,
+        "resolved_instances": 40,
+        "unresolved_instances": 60,
+        "empty_patch_instances": 0,
+        "error_instances": 0,
+    }
+
+    summary = summarize_report(
+        report,
+        dataset="SWE-bench/SWE-smith-py",
+        split="validation",
+        model="org/trained-model",
+    )
+
+    assert summary["dataset"] == "SWE-bench/SWE-smith-py"
+    assert summary["split"] == "validation"
+    assert summary["model"] == "org/trained-model"
+    assert summary["resolution_rate"] == 0.4
+    assert summary["target_name"] is None
+    assert summary["target_score"] is None
+    assert summary["target_resolved"] is None
+    assert summary["target_total"] is None
+    assert summary["resolved_delta_vs_target"] is None
+
+
+def test_summarize_report_omits_full_target_for_verified_subset():
+    summary = summarize_report(
+        {
+            "total_instances": 500,
+            "submitted_instances": 5,
+            "completed_instances": 5,
+            "resolved_instances": 2,
+            "unresolved_instances": 3,
+            "empty_patch_instances": 0,
+            "error_instances": 0,
+        }
+    )
+
+    assert summary["target_name"] is None
+    assert summary["resolved_delta_vs_target"] is None
+
+
+def test_summarize_report_target_requires_matching_dataset_split_and_model():
+    report = {
+        "total_instances": 500,
+        "submitted_instances": 500,
+        "completed_instances": 500,
+        "resolved_instances": 191,
+        "unresolved_instances": 309,
+        "empty_patch_instances": 0,
+        "error_instances": 0,
+    }
+
+    for overrides in (
+        {"dataset": "org/other-dataset"},
+        {"split": "validation"},
+        {"model": "org/other-model"},
+    ):
+        summary = summarize_report(report, **overrides)
+        assert summary["target_name"] is None
+        assert summary["resolved_delta_vs_target"] is None
 
 
 def test_run_evaluation_moves_harness_report_from_eval_cwd(tmp_path, monkeypatch):

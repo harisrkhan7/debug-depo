@@ -87,6 +87,8 @@ def collect_rollouts(args: argparse.Namespace) -> dict[str, Any]:
 
     config = AgentForgeConfig(
         model=args.model,
+        dataset=args.dataset,
+        split=args.split,
         llm_base_url=args.llm_base_url,
         llm_api_key=args.llm_api_key,
         harness=args.harness,

@@ -6,6 +6,36 @@ The runner is split into three phases:
 2. Evaluation merges predictions and runs the official SWE-bench Docker harness.
 3. Analysis joins rollout and evaluation artifacts and writes run summaries.
 
+The tracked defaults define the current evaluation setup: SWE-bench Verified,
+the `test` split, and 500 expected predictions. `cluster/submit_smoke.sh` and
+`cluster/submit_full.sh` forward `DATASET`, `SPLIT`, `TASK_IDS_FILE`,
+`EXPECTED_COUNT`, model settings, and decoding settings to their dependent PBS
+jobs. This prevents collection and evaluation from silently selecting different
+datasets. Existing run directory segmentation is unchanged.
+
+For a future training or validation collection, use a distinct `RUN_NAME` and
+set all four data-selection values together:
+
+```bash
+DATASET=org/dataset \
+SPLIT=train \
+TASK_IDS_FILE=data/splits/train_instance_ids.txt \
+EXPECTED_COUNT=1000 \
+NUM_SHARDS=10 \
+RUN_NAME=training-rollouts-v1 \
+DRY_RUN=1 \
+cluster/submit_full.sh
+```
+
+Inspect the dry run before submission. The expected count must match the unique
+instances selected across all shards. Submission fails before queuing jobs when
+`NUM_SHARDS` exceeds `EXPECTED_COUNT`, preventing empty collection shards.
+
+Evaluation summaries include the paper's 38.2% (191/500) comparison only for
+the complete default SWE-bench Verified `test` evaluation with the AgentForge
+model. Other datasets, splits, models, and partial evaluations report their
+measured results with empty target-comparison fields.
+
 Important runtime split:
 
 - vLLM model serving can run under Apptainer.

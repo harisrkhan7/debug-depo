@@ -108,6 +108,8 @@ fi
 cat <<MSG
 Starting $COLLECTION_MODE trajectory collection
   run:             $RUN_NAME
+  dataset:         $DATASET
+  split:           $SPLIT
   shard:           $SHARD_INDEX / $NUM_SHARDS
   output:          $OUTPUT_DIR
   rollout workers: $ROLLOUT_WORKERS

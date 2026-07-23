@@ -4,12 +4,18 @@ Utilities for reproducing the Klear AgentForge 8B SFT result on
 SWE-bench Verified while keeping the project structure lightweight enough for
 Mac smoke tests and HPC batch runs.
 
+The repository also includes a separate SWE-smith trajectory-data pipeline.
+It collects four independent trajectories at each of two temperatures per
+training task, evaluates all 8 samples, and produces rollout-level and
+task-level analysis.
+
 ## Target
 
 The reproduction target is the Klear-AgentForge-8B-SFT SWE-bench Verified
 score reported in the Klear-AgentForge paper:
 
 - Dataset: `princeton-nlp/SWE-bench_Verified`
+- Dataset revision: `c104f840cc67f8b6eec6f759ebc8b2693d585d4a`
 - Split: `test`
 - Instances: 500
 - Harness: `mini-swe-agent-plus` / AgentForge-style SWE scaffold
@@ -28,13 +34,19 @@ The existing workflow is the evaluation setup. Its defaults remain:
 
 ```text
 DATASET=princeton-nlp/SWE-bench_Verified
+SWEBENCH_DATASET_REVISION=c104f840cc67f8b6eec6f759ebc8b2693d585d4a
 SPLIT=test
 EXPECTED_COUNT=500
 ```
 
-Collection passes the configured dataset and split to mini-swe-agent-plus, and
-the cluster submission scripts pass the same values to dependent evaluation
-jobs. The run directory structure and Verified output paths are unchanged.
+The revision is the exact 500-row snapshot matched against the saved task
+records from the completed `agentforge-verified-full-20260715` run. The default
+is therefore pinned even when the environment variable is omitted.
+
+Collection selects tasks from the configured dataset and split, then passes one
+validated local task at a time to mini-swe-agent-plus. The cluster submission
+scripts pass the same dataset values to dependent evaluation jobs. The run
+directory structure and Verified output paths are unchanged.
 
 Future training and validation runs can use the same pipeline by setting a
 different dataset, split, immutable instance-ID file, expected count, and run
@@ -42,19 +54,21 @@ name:
 
 ```bash
 DATASET=org/dataset \
+SWEBENCH_DATASET_REVISION=<immutable-dataset-commit> \
 SPLIT=train \
 TASK_IDS_FILE=data/splits/train_instance_ids.txt \
 EXPECTED_COUNT=1000 \
 NUM_SHARDS=10 \
 RUN_NAME=training-rollouts-v1 \
 DRY_RUN=1 \
-cluster/submit_full.sh
+cluster/submit_verified_full.sh
 ```
 
 Use a distinct `RUN_NAME` for every dataset role. `RUN_ID` defaults to the run
 name with dashes replaced by underscores and can still be set explicitly.
 `NUM_SHARDS` cannot exceed `EXPECTED_COUNT`, ensuring that every scheduled
-collection shard receives at least one task.
+collection shard receives at least one task. A non-default remote dataset is
+left unpinned unless `SWEBENCH_DATASET_REVISION` is supplied.
 
 Evaluation summaries compare against the paper's 38.2% (191/500) target only
 for the complete default SWE-bench Verified `test` evaluation with the
@@ -157,7 +171,7 @@ command is rendered once per instance and can use these template fields:
 
 `{instance_id}`, `{repo}`, `{task_json}`, `{output_dir}`, `{model}`,
 `{llm_base_url}`, `{llm_api_key}`, `{agentforge_repo}`, `{max_steps}`,
-`{context_length}`, `{temperature}`, `{top_p}`.
+`{context_length}`, `{temperature}`, `{top_p}`, `{seed}`.
 
 The command should write one of the following under `{output_dir}`:
 
@@ -166,6 +180,11 @@ The command should write one of the following under `{output_dir}`:
   `rollout.json`, or `output.json` containing `model_patch`, `patch`, `diff`,
   `output_patch`, or `git_diff`
 - a JSON object with one of those keys on stdout
+
+Persisted trajectory metadata redacts `llm_api_key` and any occurrence of that
+value in the rendered command. A custom harness should still avoid printing
+credentials to stdout or stderr because those streams are retained as rollout
+logs.
 
 Example shape for a custom command:
 
@@ -193,6 +212,14 @@ data/processed/agentforge_swebench_verified/
   summary.json
   trajectories/<instance_id>/
 ```
+
+For new runs, `run_config.json` is also the resume manifest. It records the
+dataset revision, exact selected instance IDs and row-content hash,
+mini-swe-agent version/Git state, and result-affecting run settings. Reusing the
+directory with an incompatible manifest fails before any trajectory is reused;
+choose a new output directory or set `OVERWRITE=1` deliberately. Older run
+directories remain readable and analysable, but their missing historical
+dependency provenance is not backfilled.
 
 ## Official Evaluation
 
@@ -222,3 +249,170 @@ scripts/merge_predictions.sh $SCRATCH/agentforge/shard-*/predictions.jsonl
 PBS templates live in `cluster/pbs/`. They are intentionally plain so you can
 adapt modules, queues, walltimes, and scratch paths to the cluster you end up
 using.
+
+## SWE-smith trajectory collection
+
+Install mini-swe-agent-plus plus the official SWE-smith package and repository
+profiles:
+
+```bash
+scripts/install_mini_swe_agent_plus.sh
+scripts/install_swesmith.sh
+```
+
+The tracked modes provide a bounded pilot as well as an explicit full-dataset
+submission:
+
+```text
+dataset:          SWE-bench/SWE-smith-py (train)
+pilot tasks:      30
+temperatures:     0.6, 0.7
+runs/temperature: 4
+total runs/task:  8
+base seed:        42
+```
+
+Each task/sample pair receives a stable derived seed. Collection writes one
+prediction file per sample slot so duplicate task IDs are never collapsed:
+
+The upstream dataset exposes only `train`. Reproducible, repository-disjoint
+local train and validation memberships are tracked in
+`data/splits/train_instance_ids.txt` (45,809 tasks) and
+`data/splits/validation_instance_ids.txt` (5,099 tasks). Their pinned revision,
+policy, repository membership, and hashes are recorded in
+`data/splits/swesmith_py_split_manifest.json`. Derived, repository-covering
+samples provide 5,000 training tasks and 500 validation tasks, with their exact
+union available for cache building. The full sampling policy is documented in
+`data/splits/README.md`. Regenerate the derived samples from the tracked parent
+memberships with:
+
+```bash
+python -m debug_depo.prepare_swesmith_splits --subsets-only
+```
+
+Use the 500-task validation sample without changing the upstream split name:
+
+```bash
+RUN_NAME=swesmith-validation-500 \
+SPLIT=train \
+TASK_IDS_FILE=data/splits/swesmith_validation_500_instance_ids.txt \
+EXPECTED_TASKS=500 \
+NUM_SHARDS=100 \
+DRY_RUN=1 \
+cluster/submit_swesmith_full.sh
+```
+
+Collection reuses the existing mini-swe-agent-plus integration. Tasks are
+selected once from `SWE-bench/SWE-smith-py`, then each rollout passes its local
+task JSON through the same `run_agentforge_instance` path as the SWE-bench
+Verified collector. Before the agent starts, the generated mini-swe startup
+command checks out that task's SWE-smith branch in the repository-level image.
+Use the standard `swebench` runner with Docker or the default `singularity`
+runner; mini-swe-agent-plus's `pool_way` runner does not execute the required
+startup command.
+
+```text
+<run-root>/
+  cluster-logs/
+  collection/shard-*/
+    collection_manifest.json
+    samples/sample-0/ ... sample-7/
+      predictions.jsonl
+      summary.json
+      trajectories/<instance-id>/
+  merged/sample-0/ ... sample-7/
+  evaluation/sample-0/ ... sample-7/
+  analysis/
+    rollouts.csv
+    tasks.csv
+    summary.json
+```
+
+For a local artifact smoke test with no agent or task container:
+
+```bash
+MOCK=1 MOCK_PATCH=gold LIMIT=2 scripts/collect_swesmith.sh
+```
+
+SWE-smith stores the bug-producing patch rather than a solution patch. Gold
+mock predictions are therefore marked for reverse application by the
+SWE-smith evaluator, matching the upstream harness.
+
+Preview the complete cluster dependency chains:
+
+```bash
+DRY_RUN=1 cluster/submit_swesmith_smoke.sh
+DRY_RUN=1 cluster/submit_swesmith_pilot.sh
+DRY_RUN=1 cluster/submit_swesmith_full.sh
+```
+
+Then submit the two-task smoke run, the default 30-task pilot, or the tracked
+5,000-task training sample:
+
+```bash
+cluster/submit_swesmith_smoke.sh
+cluster/submit_swesmith_pilot.sh
+cluster/submit_swesmith_full.sh
+```
+
+All three commands submit `collect → eval → analyse` jobs with `afterok`
+dependencies. Override `TASK_LIMIT`, `EXPECTED_TASKS`, `NUM_SHARDS`, or provide
+an immutable `TASK_IDS_FILE` for a different subset. In bounded modes,
+`EXPECTED_TASKS` defaults to `TASK_LIMIT`; full mode omits the limit and checks
+the selected dataset size before starting rollouts. Evaluation also refuses to
+start when any sample is incomplete. PBS stdout and stderr are stored in the
+run's `cluster-logs/` directory in ephemeral storage, not in the repository.
+
+The default dataset is pinned to Hugging Face revision
+`77cab9055d42ab4a5c25c89a8f937096db13558e`. Override
+`SWESMITH_DATASET_REVISION` deliberately when moving to another snapshot.
+`scripts/install_mini_swe_agent_plus.sh` and `scripts/install_swesmith.sh`
+likewise check out fixed Git commits; their revision environment variables are
+`MINI_SWE_AGENT_PLUS_REVISION` and `SWESMITH_REVISION`. Collection manifests
+record the dataset revision, installed package commits, and a hash of any
+deterministic installer patch applied on top.
+
+Agent terminations caused by the configured step/context limits are retained as
+model outcomes with empty patches and proceed to evaluation. Infrastructure and
+unexpected execution failures fail the shard, but rerunning the same shard
+retries only those failed sample slots.
+
+Each trajectory subprocess receives the single task JSON already selected by
+the collector. The adapter still uses the pinned official mini-swe runner, but
+does not reload and materialise the complete Hugging Face split before applying
+its one-instance filter.
+
+The full wrapper defaults to
+`data/splits/swesmith_train_5000_instance_ids.txt`, 5,000 expected tasks, 50
+shards, and six concurrent trajectories per shard. Set `TASK_IDS_FILE` and
+`EXPECTED_TASKS` together to select a different subset.
+
+SWE-smith's upstream evaluator is Docker-oriented. The cluster path here uses
+Apptainer for the same repository images while retaining SWE-smith's official
+profile-specific test commands and grading logic. Generated SIFs and caches
+live under `SWESMITH_APPTAINER_SIF_DIR` and
+`SWESMITH_APPTAINER_CACHE_DIR`. Collection and evaluation pull each distinct
+image once under a filesystem lock and reuse the persistent SIF. Collection
+builds each agent's writable sandbox from that local SIF rather than repeatedly
+building from a remote `docker://` URI.
+
+Prebuild the shared task-image caches before collection:
+
+```bash
+# One Verified image plus one SWE-smith image.
+cluster/submit_apptainer_cache_smoke.sh
+
+# All 500 Verified images plus the unique images required by this SWE-smith split.
+cluster/submit_apptainer_cache_full.sh
+```
+
+The full job is resumable and deduplicates SWE-smith tasks by repository image.
+See `cluster/README.md` for dry-run, validation-split, directory, worker, and
+summary options.
+
+Use `notebooks/cluster_agentforge_swesmith.ipynb` for an interactive cluster
+workflow covering preflight, dry-run submission, optional smoke collection,
+evaluation, and analysis. Use `notebooks/inspect_swesmith_collection.ipynb` to
+inspect an existing run's shard coverage, temperatures, raw agent messages and
+patches, per-instance evaluation reports, and per-temperature pass@1…4 plus
+the explicitly labelled mixed-temperature pool metrics.

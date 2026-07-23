@@ -6,6 +6,7 @@ set -euo pipefail
 # Defaults can be overridden, for example:
 #   ENV_NAME=debug-depo PYTHON_VERSION=3.12 bash cluster/setup_jupyter_env.sh
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_NAME="${ENV_NAME:-debug-depo}"
 PYTHON_VERSION="${PYTHON_VERSION:-3.11}"
 KERNEL_NAME="${KERNEL_NAME:-$ENV_NAME}"
@@ -62,6 +63,7 @@ fi
 conda activate "$ENV_NAME"
 
 python -m pip install -U pip ipykernel jupyter_client uv
+python -m pip install -e "$ROOT_DIR[notebooks]"
 
 python -m ipykernel install --user \
   --name "$KERNEL_NAME" \

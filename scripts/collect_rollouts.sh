@@ -22,6 +22,10 @@ MSG
 fi
 
 DATASET="${DATASET:-princeton-nlp/SWE-bench_Verified}"
+DATASET_REVISION="${SWEBENCH_DATASET_REVISION:-}"
+if [[ -z "$DATASET_REVISION" && "$DATASET" == "princeton-nlp/SWE-bench_Verified" ]]; then
+  DATASET_REVISION="c104f840cc67f8b6eec6f759ebc8b2693d585d4a"
+fi
 SPLIT="${SPLIT:-test}"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/data/processed/agentforge_swebench_verified}"
 MODEL="${AGENTFORGE_MODEL:-Kwai-Klear/Klear-AgentForge-8B-SFT}"
@@ -39,6 +43,12 @@ NUM_SHARDS="${NUM_SHARDS:-1}"
 SHARD_INDEX="${SHARD_INDEX:-0}"
 ROLLOUT_WORKERS="${ROLLOUT_WORKERS:-1}"
 HF_TOKEN_FILE="${HF_TOKEN_FILE:-$HOME/.config/debug-depo/hf_token}"
+SIF_DIR="${SWEBENCH_APPTAINER_SIF_DIR:-$ROOT_DIR/data/apptainer/swebench-sifs}"
+APPTAINER_CACHE_DIR="${SWEBENCH_APPTAINER_CACHE_DIR:-${APPTAINER_CACHEDIR:-}}"
+MINI_SWE_IMAGE_TEMPLATE="${MINI_SWE_IMAGE_TEMPLATE:-${SWEBENCH_APPTAINER_IMAGE_TEMPLATE:-}}"
+if [[ -z "$MINI_SWE_IMAGE_TEMPLATE" && "$DATASET" == "princeton-nlp/SWE-bench_Verified" ]]; then
+  MINI_SWE_IMAGE_TEMPLATE='docker://ghcr.io/epoch-research/swe-bench.eval.x86_64.{instance_id}:latest'
+fi
 
 if [[ -z "${HF_TOKEN:-}" && -n "${HUGGING_FACE_HUB_TOKEN:-}" ]]; then
   export HF_TOKEN="$HUGGING_FACE_HUB_TOKEN"
@@ -69,8 +79,12 @@ args=(
   --num-shards "$NUM_SHARDS"
   --shard-index "$SHARD_INDEX"
   --rollout-workers "$ROLLOUT_WORKERS"
+  --require-complete
 )
 
+if [[ -n "$DATASET_REVISION" ]]; then
+  args+=(--dataset-revision "$DATASET_REVISION")
+fi
 if [[ -n "$LIMIT" ]]; then
   args+=(--limit "$LIMIT")
 fi
@@ -90,6 +104,9 @@ if [[ -n "${MINI_SWE_CONFIG:-}" ]]; then
   args+=(--mini-config "$MINI_SWE_CONFIG")
 fi
 args+=(--mini-runner "$MINI_SWE_RUNNER")
+if [[ -n "$MINI_SWE_IMAGE_TEMPLATE" ]]; then
+  args+=(--mini-image-template "$MINI_SWE_IMAGE_TEMPLATE")
+fi
 if [[ -n "$MINI_SWE_ENVIRONMENT_CLASS" ]]; then
   args+=(--mini-environment-class "$MINI_SWE_ENVIRONMENT_CLASS")
 fi
@@ -133,6 +150,10 @@ MSG
     exit 127
   fi
   export MSWEA_SINGULARITY_EXECUTABLE="$singularity_executable"
+  export MSWEA_SINGULARITY_SIF_DIR="${MSWEA_SINGULARITY_SIF_DIR:-$SIF_DIR}"
+  if [[ -n "$APPTAINER_CACHE_DIR" ]]; then
+    export MSWEA_SINGULARITY_CACHE_DIR="${MSWEA_SINGULARITY_CACHE_DIR:-$APPTAINER_CACHE_DIR}"
+  fi
   if [[ -n "${DEBUG_DEPO_SCRATCH:-}" ]]; then
     export TMPDIR="${TMPDIR:-$DEBUG_DEPO_SCRATCH/tmp}"
     mkdir -p "$TMPDIR"

@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shlex
+import signal
 import subprocess
 import sys
 import threading
@@ -13,6 +14,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from debug_depo.apptainer_cache import image_uri_from_template
 from debug_depo.constants import (
     DEFAULT_CONTEXT_LENGTH,
     DEFAULT_MAX_STEPS,
@@ -42,6 +44,11 @@ RESULT_JSON_NAMES = (
     "output.json",
 )
 MINISWE_SUCCESS_STATUSES = {"Submitted"}
+MINISWE_MODEL_TERMINAL_STATUSES = {
+    "ContextWindowExceededError",
+    "LimitsExceeded",
+}
+REDACTED_SECRET = "<redacted>"
 SWEBENCH_TESTBED_PATH = (
     "/opt/miniconda3/envs/testbed/bin:"
     "/opt/miniconda3/bin:"
@@ -59,6 +66,7 @@ MINISWE_SUBSET_ALIASES = {
 class AgentForgeConfig:
     model: str
     dataset: str = DEFAULT_SWEBENCH_DATASET
+    dataset_revision: str | None = None
     split: str = DEFAULT_SWEBENCH_SPLIT
     llm_base_url: str | None = None
     llm_api_key: str | None = None
@@ -69,12 +77,15 @@ class AgentForgeConfig:
     mini_config: str | None = None
     mini_runner: str = "pool_way"
     mini_environment_class: str | None = None
+    mini_image_template: str | None = None
     mini_workers: int = 1
     mini_docker_start_concurrency: int = 1
+    initialize_swesmith_task: bool = False
     max_steps: int = DEFAULT_MAX_STEPS
     context_length: int = DEFAULT_CONTEXT_LENGTH
     temperature: float = DEFAULT_TEMPERATURE
     top_p: float = DEFAULT_TOP_P
+    seed: int | None = None
     timeout_seconds: int = 7200
     mock: bool = False
     mock_patch: str = "empty"
@@ -115,6 +126,7 @@ def render_command(
     values = _FormatMap(
         instance_id=str(instance["instance_id"]),
         repo=str(instance.get("repo", "")),
+        dataset_revision=config.dataset_revision or "",
         task_json=str(task_json),
         output_dir=str(output_dir),
         agentforge_repo=config.cwd or "",
@@ -125,6 +137,7 @@ def render_command(
         context_length=str(config.context_length),
         temperature=str(config.temperature),
         top_p=str(config.top_p),
+        seed=str(config.seed if config.seed is not None else ""),
     )
     return template.format_map(values)
 
@@ -182,7 +195,23 @@ def miniswe_edit_tool_startup_command() -> str:
     )
 
 
-def prepare_miniswe_config(config: AgentForgeConfig, output_dir: Path) -> str:
+def swesmith_task_startup_command(instance_id: str) -> str:
+    """Initialize a repo-level SWE-smith image at one task branch."""
+
+    return "\n".join(
+        [
+            "cd /testbed || exit 20",
+            f"git checkout --force {shlex.quote(instance_id)} || exit 21",
+        ]
+    )
+
+
+def prepare_miniswe_config(
+    config: AgentForgeConfig,
+    output_dir: Path,
+    *,
+    instance: dict[str, Any] | None = None,
+) -> str:
     """Write the effective mini-swe-agent config for this run."""
 
     try:
@@ -213,8 +242,11 @@ def prepare_miniswe_config(config: AgentForgeConfig, output_dir: Path) -> str:
         )
     model_kwargs["temperature"] = float(config.temperature)
     model_kwargs["top_p"] = float(config.top_p)
+    if config.seed is not None:
+        model_kwargs["seed"] = int(config.seed)
 
-    if miniswe_uses_singularity(config):
+    uses_singularity = miniswe_uses_singularity(config)
+    if uses_singularity:
         environment_config = payload.setdefault("environment", {})
         if not isinstance(environment_config, dict):
             raise AgentForgeRunError(
@@ -230,14 +262,29 @@ def prepare_miniswe_config(config: AgentForgeConfig, output_dir: Path) -> str:
         env_config.setdefault("CONDA_PREFIX", "/opt/miniconda3/envs/testbed")
         env_config.setdefault("PYTHONNOUSERSITE", "1")
 
+    if config.initialize_swesmith_task or uses_singularity:
         run_config = payload.setdefault("run", {})
         if not isinstance(run_config, dict):
             raise AgentForgeRunError(f"mini-swe-agent-plus run config must be a mapping: {source_path}")
-        startup_command = miniswe_edit_tool_startup_command()
+        startup_commands: list[str] = []
+        if config.initialize_swesmith_task:
+            if instance is None:
+                raise AgentForgeRunError(
+                    "SWE-smith task initialization requires the selected instance."
+                )
+            startup_commands.append(
+                swesmith_task_startup_command(str(instance["instance_id"]))
+            )
         if existing := run_config.get("env_startup_command"):
-            run_config["env_startup_command"] = f"{existing.rstrip()}\n{startup_command}"
-        else:
-            run_config["env_startup_command"] = startup_command
+            if not isinstance(existing, str):
+                raise AgentForgeRunError(
+                    "mini-swe-agent-plus env_startup_command must be a string: "
+                    f"{source_path}"
+                )
+            startup_commands.append(existing.rstrip())
+        if uses_singularity:
+            startup_commands.append(miniswe_edit_tool_startup_command())
+        run_config["env_startup_command"] = "\n".join(startup_commands)
 
     generated_path = output_dir / "miniswe_config.generated.yaml"
     generated_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
@@ -249,11 +296,13 @@ def render_miniswe_command(
     instance: dict[str, Any],
     output_dir: Path,
     config: AgentForgeConfig,
+    task_json: Path | None = None,
 ) -> str:
-    """Build the official mini-swe-agent-plus SWE-bench command for one instance."""
+    """Build the mini-swe command for one already-selected local task."""
 
     instance_id = str(instance["instance_id"])
     model = config.mini_model or default_miniswe_model(config.model)
+    task_json = task_json or output_dir / "task.json"
 
     mini_runner = config.mini_runner
     mini_environment_class = config.mini_environment_class
@@ -274,16 +323,24 @@ def render_miniswe_command(
             "mini-swe-agent-plus pool_way runner only supports Docker task containers. "
             "Use --mini-runner swebench --mini-environment-class singularity on Apptainer clusters."
         )
+    if mini_runner == "pool_way" and config.initialize_swesmith_task:
+        raise AgentForgeRunError(
+            "mini-swe-agent-plus pool_way does not execute task startup commands and "
+            "cannot safely initialize SWE-smith branches. Use --mini-runner swebench "
+            "with --mini-environment-class docker, or use the singularity runner."
+        )
 
-    module = (
-        "minisweagent.run.extra.swebench_pool_way"
-        if mini_runner == "pool_way"
-        else "minisweagent.run.extra.swebench"
-    )
     command = [
         sys.executable,
         "-m",
-        module,
+        "debug_depo.miniswe_task",
+        "--runner",
+        mini_runner,
+        "--task-json",
+        str(task_json),
+        "--instance-id",
+        instance_id,
+        "--",
         "--model",
         model,
         "--subset",
@@ -293,7 +350,7 @@ def render_miniswe_command(
         "--output",
         str(output_dir),
         "--config",
-        prepare_miniswe_config(config, output_dir),
+        prepare_miniswe_config(config, output_dir, instance=instance),
         "--filter",
         f"^{re.escape(instance_id)}$",
         "--workers",
@@ -310,6 +367,32 @@ def render_miniswe_command(
     if mini_runner == "swebench" and mini_environment_class:
         command.extend(["--environment-class", mini_environment_class])
     return shlex.join(command)
+
+
+def miniswe_task_instance(
+    instance: dict[str, Any],
+    config: AgentForgeConfig,
+) -> dict[str, Any]:
+    """Set mini-swe's image name from the shared Apptainer template."""
+
+    if not config.mini_image_template:
+        return instance
+    instance_id = str(instance["instance_id"])
+    uri = image_uri_from_template(
+        config.mini_image_template,
+        instance_id,
+        image_key=str(instance.get("image_name") or ""),
+    )
+    if not uri.startswith("docker://"):
+        raise AgentForgeRunError(
+            "mini-swe-agent-plus's Singularity runner requires a docker:// "
+            f"image template, got {uri!r}"
+        )
+    return {
+        **instance,
+        # mini-swe adds docker:// itself for the Singularity environment.
+        "image_name": uri.removeprefix("docker://"),
+    }
 
 
 def _find_patch_in_payload(payload: Any) -> str | None:
@@ -411,6 +494,44 @@ def miniswe_failure(instance_dir: str | Path) -> tuple[str, str] | None:
     return None
 
 
+def miniswe_result_status(exit_status: str | None) -> str:
+    """Map mini-swe's exit status to a collection outcome."""
+
+    if exit_status is None or exit_status in MINISWE_SUCCESS_STATUSES:
+        return "completed"
+    if exit_status in MINISWE_MODEL_TERMINAL_STATUSES:
+        return "model_terminated"
+    return "error"
+
+
+def _terminate_process_group(
+    process: subprocess.Popen[str],
+    *,
+    grace_seconds: float = 5,
+) -> int:
+    """Terminate the isolated process group created for one rollout."""
+
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    try:
+        process.wait(timeout=grace_seconds)
+    except subprocess.TimeoutExpired:
+        pass
+
+    # The wrapper shell can exit before one of its descendants. Always address
+    # the process group again so a surviving container/helper cannot outlive
+    # the timed-out rollout.
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    if process.poll() is None:
+        process.wait()
+    return int(process.returncode if process.returncode is not None else -signal.SIGKILL)
+
+
 def run_subprocess_with_optional_streaming(
     command: str,
     *,
@@ -422,19 +543,32 @@ def run_subprocess_with_optional_streaming(
     stream_output: bool,
 ) -> subprocess.CompletedProcess[str]:
     if not stream_output:
-        completed = subprocess.run(
+        process = subprocess.Popen(
             command,
             cwd=cwd,
             env=env,
             shell=True,
             text=True,
-            capture_output=True,
-            timeout=timeout_seconds,
-            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
         )
-        stdout_path.write_text(completed.stdout, encoding="utf-8")
-        stderr_path.write_text(completed.stderr, encoding="utf-8")
-        return completed
+        try:
+            stdout, stderr = process.communicate(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired as exc:
+            _terminate_process_group(process)
+            stdout, stderr = process.communicate()
+            stdout_path.write_text(stdout, encoding="utf-8")
+            stderr_path.write_text(stderr, encoding="utf-8")
+            raise subprocess.TimeoutExpired(
+                command,
+                timeout_seconds,
+                output=stdout,
+                stderr=stderr,
+            ) from exc
+        stdout_path.write_text(stdout, encoding="utf-8")
+        stderr_path.write_text(stderr, encoding="utf-8")
+        return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
     process = subprocess.Popen(
         command,
@@ -445,6 +579,7 @@ def run_subprocess_with_optional_streaming(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         bufsize=1,
+        start_new_session=True,
     )
     stdout_chunks: list[str] = []
     stderr_chunks: list[str] = []
@@ -474,8 +609,7 @@ def run_subprocess_with_optional_streaming(
     try:
         returncode = process.wait(timeout=timeout_seconds)
     except subprocess.TimeoutExpired:
-        process.kill()
-        returncode = process.wait()
+        returncode = _terminate_process_group(process)
         message = f"\nCommand timed out after {timeout_seconds} seconds.\n"
         stderr_chunks.append(message)
         with stderr_path.open("a", encoding="utf-8") as handle:
@@ -491,6 +625,17 @@ def run_subprocess_with_optional_streaming(
         stdout="".join(stdout_chunks),
         stderr="".join(stderr_chunks),
     )
+
+
+def _redacted_trajectory_config(config: AgentForgeConfig) -> dict[str, Any]:
+    payload = asdict(config)
+    secret = config.llm_api_key
+    if secret:
+        payload["llm_api_key"] = REDACTED_SECRET
+        command_template = payload.get("command")
+        if isinstance(command_template, str):
+            payload["command"] = command_template.replace(secret, REDACTED_SECRET)
+    return json_safe(payload)
 
 
 def run_mock_agentforge(
@@ -532,19 +677,25 @@ def run_external_agentforge(
     instance_dir: Path,
     config: AgentForgeConfig,
 ) -> dict[str, Any]:
+    task_instance = (
+        miniswe_task_instance(instance, config)
+        if config.harness == "mini-swe-agent-plus"
+        else instance
+    )
     task_json = instance_dir / "task.json"
-    write_json(task_json, instance)
+    write_json(task_json, task_instance)
 
     if config.harness == "mini-swe-agent-plus":
         command = render_miniswe_command(
-            instance=instance,
+            instance=task_instance,
             output_dir=instance_dir,
             config=config,
+            task_json=task_json,
         )
     elif config.command:
         command = render_command(
             config.command,
-            instance=instance,
+            instance=task_instance,
             task_json=task_json,
             output_dir=instance_dir,
             config=config,
@@ -569,6 +720,11 @@ def run_external_agentforge(
             "AGENTFORGE_TOP_P": str(config.top_p),
         }
     )
+    if config.dataset_revision:
+        env["AGENTFORGE_DATASET_REVISION"] = config.dataset_revision
+        env["MINI_SWE_DATASET_REVISION"] = config.dataset_revision
+    if config.seed is not None:
+        env["AGENTFORGE_SEED"] = str(config.seed)
     if config.llm_base_url:
         env["AGENTFORGE_LLM_BASE_URL"] = config.llm_base_url
         env.setdefault("OPENAI_BASE_URL", config.llm_base_url)
@@ -600,15 +756,21 @@ def run_external_agentforge(
 
     patch, patch_source = extract_patch(instance_dir, completed.stdout)
     mini_failure = miniswe_failure(instance_dir) if config.harness == "mini-swe-agent-plus" else None
-    error_patch = patch if mini_failure is not None else ""
-    if mini_failure is not None:
+    mini_exit_status = mini_failure[0] if mini_failure is not None else None
+    status = miniswe_result_status(mini_exit_status)
+    if completed.returncode != 0:
+        status = "error"
+    error_patch = patch if status == "error" else ""
+    if status != "completed":
         patch = ""
         patch_source = None
-    status = "completed" if completed.returncode == 0 and mini_failure is None else "error"
+    persisted_command = command
+    if config.llm_api_key:
+        persisted_command = persisted_command.replace(config.llm_api_key, REDACTED_SECRET)
     trajectory = {
         "created_at": utc_now(),
-        "command": command,
-        "config": json_safe(asdict(config)),
+        "command": persisted_command,
+        "config": _redacted_trajectory_config(config),
         "instance_id": instance["instance_id"],
         "patch_chars": len(patch),
         "patch": patch,
@@ -619,8 +781,9 @@ def run_external_agentforge(
         "stderr_path": str(instance_dir / "stderr.txt"),
     }
     if mini_failure is not None:
-        trajectory["error_patch"] = error_patch
-        trajectory["mini_swe_exit_status"] = mini_failure[0]
+        if error_patch:
+            trajectory["error_patch"] = error_patch
+        trajectory["mini_swe_exit_status"] = mini_exit_status
         trajectory["mini_swe_exit_status_path"] = mini_failure[1]
     write_json(instance_dir / "trajectory.json", trajectory)
     result = {
@@ -632,7 +795,7 @@ def run_external_agentforge(
         "trajectory_path": str(instance_dir / "trajectory.json"),
     }
     if mini_failure is not None:
-        result["mini_swe_exit_status"] = mini_failure[0]
+        result["mini_swe_exit_status"] = mini_exit_status
     return result
 
 

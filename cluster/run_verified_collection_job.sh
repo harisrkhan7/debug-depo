@@ -23,7 +23,7 @@ case "$COLLECTION_MODE" in
     ;;
   full)
     RUN_NAME="${RUN_NAME:-agentforge-verified-full}"
-    DEFAULT_ROLLOUT_WORKERS=8
+    DEFAULT_ROLLOUT_WORKERS=6
     NUM_SHARDS="${NUM_SHARDS:-10}"
     SHARD_INDEX="${PBS_ARRAY_INDEX:-${SHARD_INDEX:-0}}"
     unset LIMIT
@@ -45,6 +45,9 @@ mkdir -p "$OUTPUT_DIR"
 
 export RUN_NAME RUN_ROOT OUTPUT_DIR NUM_SHARDS SHARD_INDEX
 export DATASET="${DATASET:-princeton-nlp/SWE-bench_Verified}"
+if [[ -z "${SWEBENCH_DATASET_REVISION:-}" && "$DATASET" == "princeton-nlp/SWE-bench_Verified" ]]; then
+  export SWEBENCH_DATASET_REVISION="c104f840cc67f8b6eec6f759ebc8b2693d585d4a"
+fi
 export SPLIT="${SPLIT:-test}"
 export AGENTFORGE_MODEL="${AGENTFORGE_MODEL:-Kwai-Klear/Klear-AgentForge-8B-SFT}"
 export HARNESS="${HARNESS:-mini-swe-agent-plus}"
@@ -106,9 +109,10 @@ else
 fi
 
 cat <<MSG
-Starting $COLLECTION_MODE trajectory collection
+Starting Verified $COLLECTION_MODE trajectory collection
   run:             $RUN_NAME
   dataset:         $DATASET
+  revision:        ${SWEBENCH_DATASET_REVISION:-unpinned}
   split:           $SPLIT
   shard:           $SHARD_INDEX / $NUM_SHARDS
   output:          $OUTPUT_DIR

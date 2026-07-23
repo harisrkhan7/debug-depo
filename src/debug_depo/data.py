@@ -7,7 +7,11 @@ import json
 from pathlib import Path
 from typing import Any
 
-from debug_depo.constants import DEFAULT_SWEBENCH_DATASET, DEFAULT_SWEBENCH_SPLIT
+from debug_depo.constants import (
+    DEFAULT_SWEBENCH_DATASET,
+    DEFAULT_SWEBENCH_DATASET_REVISION,
+    DEFAULT_SWEBENCH_SPLIT,
+)
 from debug_depo.utils import ensure_dir, load_hf_token_from_file, read_jsonl, write_json, write_jsonl
 
 
@@ -23,7 +27,12 @@ def _records_from_json(path: Path) -> list[dict[str, Any]]:
     return [dict(item) for item in payload if isinstance(item, dict)]
 
 
-def load_swebench_tasks(dataset_name: str, split: str) -> list[dict[str, Any]]:
+def load_swebench_tasks(
+    dataset_name: str,
+    split: str,
+    *,
+    revision: str | None = None,
+) -> list[dict[str, Any]]:
     """Load SWE-bench instances from Hugging Face or a local JSON/JSONL file."""
 
     dataset_path = Path(dataset_name)
@@ -40,7 +49,29 @@ def load_swebench_tasks(dataset_name: str, split: str) -> list[dict[str, Any]]:
         ) from exc
 
     load_hf_token_from_file()
-    return [dict(row) for row in load_dataset(dataset_name, split=split)]
+    return [
+        dict(row)
+        for row in load_dataset(
+            dataset_name,
+            split=split,
+            revision=revision,
+        )
+    ]
+
+
+def resolve_swebench_dataset_revision(
+    dataset_name: str,
+    revision: str | None,
+) -> str | None:
+    """Resolve the proven Verified pin without applying it to other datasets."""
+
+    if Path(dataset_name).is_file():
+        return None
+    if revision:
+        return revision
+    if dataset_name.casefold() == DEFAULT_SWEBENCH_DATASET.casefold():
+        return DEFAULT_SWEBENCH_DATASET_REVISION
+    return None
 
 
 def read_instance_ids_file(path: str | Path) -> list[str]:
@@ -142,6 +173,7 @@ def write_task_selection(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Prepare a SWE-bench task selection file.")
     parser.add_argument("--dataset", default=DEFAULT_SWEBENCH_DATASET)
+    parser.add_argument("--dataset-revision")
     parser.add_argument("--split", default=DEFAULT_SWEBENCH_SPLIT)
     parser.add_argument("--output-dir", default="data/splits")
     parser.add_argument("--name", default="swebench_verified")
@@ -156,11 +188,19 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    dataset_revision = resolve_swebench_dataset_revision(
+        args.dataset,
+        args.dataset_revision,
+    )
     requested_ids = list(args.instance_ids or [])
     if args.instance_ids_file:
         requested_ids.extend(read_instance_ids_file(args.instance_ids_file))
     tasks = select_tasks(
-        load_swebench_tasks(args.dataset, args.split),
+        load_swebench_tasks(
+            args.dataset,
+            args.split,
+            revision=dataset_revision,
+        ),
         instance_ids=requested_ids or None,
         start_index=args.start_index,
         limit=args.limit,

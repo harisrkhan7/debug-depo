@@ -42,13 +42,16 @@ export UV="$UV_BIN"
 
 "$UV_BIN" sync --extra dev --extra swebench
 scripts/install_mini_swe_agent_plus.sh
+scripts/install_swesmith.sh
 
-"$UV_BIN" run python - <<'PY'
+PYTHONPATH="$ROOT_DIR/src:$ROOT_DIR/external/mini-swe-agent-plus/src:$ROOT_DIR/external/SWE-smith${PYTHONPATH:+:$PYTHONPATH}" \
+  "$UV_BIN" run python - <<'PY'
 import importlib.util
 
 required = {
     "debug_depo": "debug-depo",
     "minisweagent": "mini-swe-agent-plus",
+    "swesmith": "SWE-smith",
     "datasets": "datasets",
 }
 
@@ -56,7 +59,7 @@ missing = [label for module, label in required.items() if importlib.util.find_sp
 if missing:
     raise SystemExit(f"Missing after setup: {', '.join(missing)}")
 
-print("Rollout environment OK: debug_depo, mini-swe-agent-plus, and datasets import.")
+print("Rollout environment OK: debug_depo, mini-swe-agent-plus, SWE-smith, and datasets import.")
 PY
 
 cat <<MSG

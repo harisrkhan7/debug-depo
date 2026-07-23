@@ -281,10 +281,6 @@ temp/
 # Cluster / HPC artifacts
 # -------------------------
 
-# Cluster logs
-cluster/logs/*
-!cluster/logs/.gitkeep
-
 # PBS / SLURM runtime output
 *.o[0-9]*
 *.e[0-9]*

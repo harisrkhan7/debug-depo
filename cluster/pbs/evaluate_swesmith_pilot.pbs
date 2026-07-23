@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+#PBS -N swesmith-pilot-eval
+#PBS -l select=1:ncpus=16:mem=128gb
+#PBS -l walltime=24:00:00
+# Output and error paths are supplied by the submission wrapper.
+
+set -euo pipefail
+cd "$PBS_O_WORKDIR"
+cluster/run_swesmith_evaluation_job.sh

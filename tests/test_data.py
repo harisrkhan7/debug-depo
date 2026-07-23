@@ -4,6 +4,7 @@ from debug_depo.data import (
     instance_ids,
     load_swebench_tasks,
     read_instance_ids_file,
+    resolve_swebench_dataset_revision,
     select_tasks,
     write_task_selection,
 )
@@ -26,6 +27,21 @@ def test_load_local_jsonl_tasks(tmp_path):
     tasks = load_swebench_tasks(str(path), "test")
 
     assert instance_ids(tasks) == ["a", "b"]
+
+
+def test_verified_revision_is_pinned_without_affecting_other_datasets(tmp_path):
+    local_dataset = tmp_path / "tasks.jsonl"
+    local_dataset.write_text(json.dumps(task("a")) + "\n")
+
+    assert resolve_swebench_dataset_revision(
+        "princeton-nlp/SWE-bench_Verified",
+        None,
+    ) == "c104f840cc67f8b6eec6f759ebc8b2693d585d4a"
+    assert resolve_swebench_dataset_revision("org/other", None) is None
+    assert resolve_swebench_dataset_revision("org/other", "other-commit") == (
+        "other-commit"
+    )
+    assert resolve_swebench_dataset_revision(str(local_dataset), "ignored") is None
 
 
 def test_select_tasks_preserves_requested_order_and_shards():

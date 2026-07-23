@@ -6,25 +6,29 @@ The runner is split into three phases:
 2. Evaluation merges predictions and runs the official SWE-bench Docker harness.
 3. Analysis joins rollout and evaluation artifacts and writes run summaries.
 
-The tracked defaults define the current evaluation setup: SWE-bench Verified,
-the `test` split, and 500 expected predictions. `cluster/submit_smoke.sh` and
-`cluster/submit_full.sh` forward `DATASET`, `SPLIT`, `TASK_IDS_FILE`,
+The tracked defaults define the current evaluation setup: SWE-bench Verified at
+revision `c104f840cc67f8b6eec6f759ebc8b2693d585d4a`, the `test` split, and 500
+expected predictions. That revision exactly matches all 500 saved task records
+from the completed `agentforge-verified-full-20260715` run.
+`cluster/submit_verified_smoke.sh` and `cluster/submit_verified_full.sh` forward
+`DATASET`, `SWEBENCH_DATASET_REVISION`, `SPLIT`, `TASK_IDS_FILE`,
 `EXPECTED_COUNT`, model settings, and decoding settings to their dependent PBS
-jobs. This prevents collection and evaluation from silently selecting different
-datasets. Existing run directory segmentation is unchanged.
+jobs. This prevents collection and Apptainer evaluation from silently selecting
+different dataset snapshots. Existing run directory segmentation is unchanged.
 
 For a future training or validation collection, use a distinct `RUN_NAME` and
 set all four data-selection values together:
 
 ```bash
 DATASET=org/dataset \
+SWEBENCH_DATASET_REVISION=<immutable-dataset-commit> \
 SPLIT=train \
 TASK_IDS_FILE=data/splits/train_instance_ids.txt \
 EXPECTED_COUNT=1000 \
 NUM_SHARDS=10 \
 RUN_NAME=training-rollouts-v1 \
 DRY_RUN=1 \
-cluster/submit_full.sh
+cluster/submit_verified_full.sh
 ```
 
 Inspect the dry run before submission. The expected count must match the unique
@@ -94,7 +98,8 @@ bash cluster/setup_jupyter_env.sh
 It creates or reuses a `debug-depo` Conda environment and registers a Jupyter
 kernel named `debug-depo`. The repo requires Python `>=3.10,<3.13`, so the
 script creates a Python 3.11 Conda environment even if the cluster's default
-Python module is newer. It does not install project dependencies or
+Python module is newer. It installs the project and its `notebooks` optional
+dependencies, including pandas, into that kernel. It does not install
 `mini-swe-agent-plus`.
 
 To copy this checkout to your CX3 home directory:
@@ -129,8 +134,9 @@ job. `qsub` records the submission directory as `PBS_O_WORKDIR`; each PBS file
 changes back to that shared checkout before running anything.
 
 Local `.venv` and `external/` directories are deliberately excluded by the
-sync script, so run `cluster/setup_rollout_env.sh` on the cluster at least once.
-It creates the checkout's `.venv` and installs mini-swe-agent-plus there.
+sync script, so rerun `cluster/setup_rollout_env.sh` on the cluster after
+syncing any mini-swe integration change. It creates the checkout's `.venv`,
+installs mini-swe-agent-plus there, and verifies the persistent SIF integration.
 
 Every scheduled collection and evaluation job then runs this bootstrap:
 
@@ -195,12 +201,16 @@ export LLM_API_KEY=local
 LIMIT=1 MAX_STEPS=20 scripts/collect_rollouts.sh
 ```
 
-The first Apptainer/Singularity task run may be slow because mini-swe builds a
-writable sandbox for the SWE-bench image under `TMPDIR`. The portable cluster
-defaults point `TMPDIR` at ephemeral scratch by default. The local
-`scripts/install_mini_swe_agent_plus.sh` patch also pre-creates `/rds` inside
-that writable sandbox so Imperial's automatic `/rds` bind has a destination. If
-your site auto-binds a different top-level filesystem, set
+The first Apptainer/Singularity task run may be slow because the collector
+pulls the image into `SWEBENCH_APPTAINER_SIF_DIR` under a filesystem lock, then
+mini-swe builds a writable sandbox from that local SIF under `TMPDIR`.
+Every collection and evaluation mode uses this same image-keyed rule, so any
+later run requesting the same image URI reuses the completed SIF. The setup
+script verifies that mini-swe has this integration. The portable cluster
+defaults put both the SIF and temporary sandbox in ephemeral scratch. The local
+installer patch also pre-creates `/rds` inside that writable sandbox so
+Imperial's automatic `/rds` bind has a destination. If your site auto-binds a
+different top-level filesystem, set
 `MSWEA_SINGULARITY_WRITABLE_BIND_DESTINATIONS=/rds:/yourfs` before installing
 or running mini-swe. Generated Singularity configs also put
 `/opt/miniconda3/envs/testbed/bin` first on `PATH` so commands use the
@@ -211,13 +221,13 @@ SWE-bench task environment rather than the base Conda Python.
 Submit from the repository root. Preview the three dependent PBS submissions:
 
 ```bash
-DRY_RUN=1 cluster/submit_smoke.sh
+DRY_RUN=1 cluster/submit_verified_smoke.sh
 ```
 
 Then submit a real five-instance collection, evaluation, and smoke analysis:
 
 ```bash
-cluster/submit_smoke.sh
+cluster/submit_verified_smoke.sh
 ```
 
 The collection job reserves one GPU, four CPU cores, and 32 GB of host memory.
@@ -228,6 +238,7 @@ are kept together under:
 
 ```text
 $DEBUG_DEPO_SCRATCH/runs/agentforge-verified-smoke/
+  cluster-logs/
   rollouts/shard-0/
   merged/
   evaluation/
@@ -238,30 +249,43 @@ Use a new name for an independent run, or reuse a name to resume completed
 trajectories:
 
 ```bash
-RUN_NAME=smoke-002 cluster/submit_smoke.sh
+RUN_NAME=smoke-002 cluster/submit_verified_smoke.sh
 ```
+
+Resumed Verified collection reuses completed and model-terminated trajectories
+but retries infrastructure-error slots. Collection and evaluation write their
+diagnostic summaries and fail the job when any infrastructure outcome remains,
+so dependent `afterok` jobs cannot proceed on an incomplete run. Successful
+Apptainer evaluation reports are reused only when their prediction, task,
+generated test script, image configuration, and evaluator provenance still
+match. New collection manifests also compare the dataset revision, selected
+task IDs and row-content hash, mini-swe-agent version/Git state, and
+result-affecting settings before reusing a trajectory. A mismatch requires a new
+run directory or `OVERWRITE=1`. Legacy runs remain available for analysis, but
+unknown historical package provenance is not invented after the fact.
 
 ## Full collection and evaluation
 
 Preview the default ten-shard submission:
 
 ```bash
-DRY_RUN=1 cluster/submit_full.sh
+DRY_RUN=1 cluster/submit_verified_full.sh
 ```
 
 Submit all 500 SWE-bench Verified instances followed by evaluation and full analysis:
 
 ```bash
-cluster/submit_full.sh
+cluster/submit_verified_full.sh
 ```
 
 The collection is a ten-element PBS array. Round-robin task selection gives
-each shard 50 instances, with eight trajectories active per shard. Every array
+each shard 50 instances, with six trajectories active per shard. Every array
 element reserves `ncpus=12`, `mem=64gb`, and one GPU, and starts a private vLLM
 server on a job-specific localhost port. `MINI_SWE_WORKERS=1` is intentional:
-the eight-way concurrency is provided by `ROLLOUT_WORKERS=8`, and each mini-swe
+the six-way concurrency is provided by `ROLLOUT_WORKERS=6`, and each mini-swe
 command is already filtered to one instance. The four remaining CPU cores and
 additional host memory provide headroom for vLLM and container overhead.
+The per-trajectory timeout is 21,600 seconds, matching the completed full run.
 
 The dependent evaluation job first requires ten shard prediction files and
 exactly 500 merged prediction records. It then reserves 32 CPU cores and
@@ -273,6 +297,7 @@ Outputs are written under:
 
 ```text
 $DEBUG_DEPO_SCRATCH/runs/agentforge-verified-full/
+  cluster-logs/
   rollouts/shard-0/ ... shard-9/
   merged/predictions.jsonl
   evaluation/reports/
@@ -286,7 +311,7 @@ shard time is `ceil(tasks_per_shard / 8) * typical_task_time`, plus vLLM startup
 If that approaches the queue walltime, use 20 shards of 25 tasks instead:
 
 ```bash
-NUM_SHARDS=20 RUN_NAME=agentforge-verified-full-20 cluster/submit_full.sh
+NUM_SHARDS=20 RUN_NAME=agentforge-verified-full-20 cluster/submit_verified_full.sh
 ```
 
 Twelve cores and 64 GB support eight writable task containers while retaining
@@ -301,7 +326,7 @@ The analysis is deterministic and CPU-only; it does not need the rollout LLM or 
 smoke analysis from the repository root with the same run name used for collection:
 
 ```bash
-RUN_NAME=agentforge-verified-full-20260715 cluster/submit_analysis_smoke.sh
+RUN_NAME=agentforge-verified-full-20260715 cluster/submit_verified_analysis_smoke.sh
 ```
 
 The smoke job still requires all 500 unique source predictions. It selects two representative rows
@@ -312,11 +337,11 @@ rows and checks that artifacts can be joined across the whole array rather than 
 After the smoke job succeeds, submit the complete 500-row analysis:
 
 ```bash
-RUN_NAME=agentforge-verified-full-20260715 cluster/submit_analysis_full.sh
+RUN_NAME=agentforge-verified-full-20260715 cluster/submit_verified_analysis_full.sh
 ```
 
-`cluster/submit_analysis.sh` remains a backward-compatible alias for the full analysis. Preview any
-submission with `DRY_RUN=1`. The two jobs write:
+`cluster/submit_verified_analysis.sh` is the shared mode-aware implementation.
+Preview any submission with `DRY_RUN=1`. The two jobs write:
 
 ```text
 $DEBUG_DEPO_SCRATCH/runs/$RUN_NAME/analysis/
@@ -364,7 +389,7 @@ directly from artifacts without serving a model.
 To submit collection without automatically queuing evaluation:
 
 ```bash
-SUBMIT_EVAL=0 cluster/submit_full.sh
+SUBMIT_EVAL=0 cluster/submit_verified_full.sh
 ```
 
 To queue collection and evaluation without the default dependent analysis job, set
@@ -374,12 +399,95 @@ After the array completes, submit evaluation manually with the matching run
 name and shard count:
 
 ```bash
-qsub -v RUN_NAME=agentforge-verified-full,NUM_SHARDS=10 cluster/pbs/evaluate_all.pbs
+RUN_NAME=agentforge-verified-full
+source cluster/resolve_run_paths.sh
+mkdir -p "$CLUSTER_LOG_DIR"
+qsub -o "$CLUSTER_LOG_DIR/" -e "$CLUSTER_LOG_DIR/" \
+  -v RUN_NAME="$RUN_NAME",RUN_ROOT="$RUN_ROOT",NUM_SHARDS=10 \
+  cluster/pbs/evaluate_verified_full.pbs
 ```
 
 The automatic scripts use `afterok` PBS dependencies, so evaluation begins
 only after the complete collection job or array succeeds, and analysis begins
-only after evaluation succeeds.
+only after evaluation succeeds. Submission wrappers create
+`$RUN_ROOT/cluster-logs/` and send PBS stdout and stderr there; the PBS
+templates intentionally leave output paths to those wrappers.
+
+## Prebuild the task-image caches
+
+Collection and evaluation can share a prebuilt persistent SIF cache. The
+prebuilder resolves:
+
+- one Epoch image for every selected SWE-bench Verified instance;
+- one repository image for every distinct SWE-smith profile represented by the
+  selected task-ID file.
+
+SWE-smith task IDs are resolved against the pinned dataset and then deduplicated
+by image URI. The tracked `train_instance_ids.txt` contains 45,809 tasks across
+117 repository snapshots, so it requires far fewer SIFs than tasks. The build
+summary records the definitive selected-task and unique-image counts.
+
+First preview and submit a two-image smoke test (one task from each family):
+
+```bash
+DRY_RUN=1 cluster/submit_apptainer_cache_smoke.sh
+cluster/submit_apptainer_cache_smoke.sh
+```
+
+Then build all 500 Verified SIFs plus the SWE-smith SIFs required by the
+tracked 5,000-task training and 500-task validation samples:
+
+```bash
+SWESMITH_TASK_IDS_FILE=data/splits/swesmith_cache_5500_instance_ids.txt \
+  DRY_RUN=1 cluster/submit_apptainer_cache_full.sh
+SWESMITH_TASK_IDS_FILE=data/splits/swesmith_cache_5500_instance_ids.txt \
+  cluster/submit_apptainer_cache_full.sh
+```
+
+Use the validation membership instead when preparing a validation-only run:
+
+```bash
+SWESMITH_TASK_IDS_FILE=data/splits/swesmith_validation_500_instance_ids.txt \
+  cluster/submit_apptainer_cache_full.sh
+```
+
+The job uses the same `SWEBENCH_APPTAINER_*` and
+`SWESMITH_APPTAINER_*` directories as collection and evaluation. Pulls use
+temporary files plus per-SIF filesystem locks, and rerunning the job skips
+completed SIFs. It attempts all images, records failures, and exits nonzero if
+any pull failed. Summaries are written under
+`$DEBUG_DEPO_SCRATCH/cache-builds/`. `cluster/pull_cluster_artifacts.sh`
+includes these summaries by default under
+`scratch/cluster-artifacts/cache-builds/`, alongside the complete
+`scratch/cluster-artifacts/runs/` tree. Set `PULL_CACHE_BUILDS=0` to skip them.
+Standalone cache-build PBS logs are stored under
+`$DEBUG_DEPO_SCRATCH/runs/apptainer-cache-{smoke,full}/cluster-logs/`. The
+cache-first pilot helper instead puts its cache log in the pilot run's
+`cluster-logs/` directory with the downstream jobs.
+
+The smoke template reserves 8 CPUs and 64 GB for 24 hours and runs two pulls
+concurrently. The full template reserves 32 CPUs and 128 GB for 48 hours and
+runs 20 pulls concurrently. Twenty is an intentionally moderately aggressive
+single-node starting point: registry bandwidth, shared-cache I/O, and
+temporary-storage capacity are more likely limits than CPU. Reduce
+`CACHE_BUILD_MAX_WORKERS` if the smoke logs or site monitoring show registry
+throttling, I/O saturation, or memory pressure.
+
+Useful overrides are:
+
+```bash
+# Preview image resolution without pulling or creating cache directories.
+DRY_RUN=1 CACHE_BUILD_MODE=full scripts/build_apptainer_cache.sh
+
+# Build only one family or tune concurrent pulls.
+CACHE_BUILD_DATASETS=swesmith CACHE_BUILD_MAX_WORKERS=12 \
+  cluster/submit_apptainer_cache_full.sh
+```
+
+Verified collection injects the same
+`SWEBENCH_APPTAINER_IMAGE_TEMPLATE` used by evaluation into mini-swe's local
+task row. Consequently, the 500 prebuilt Verified SIFs serve both phases rather
+than producing separate Docker Hub and GHCR cache entries.
 
 ## Evaluation storage
 
@@ -403,10 +511,173 @@ the cached blobs and rebuild the SIF faster than the initial network pull.
 Useful evaluation knobs:
 
 ```bash
-EVAL_MAX_WORKERS=4 cluster/submit_full.sh
-EVAL_TIMEOUT=3600 cluster/submit_full.sh
+EVAL_MAX_WORKERS=4 cluster/submit_verified_full.sh
+EVAL_TIMEOUT=3600 cluster/submit_verified_full.sh
 ```
 
 The Apptainer evaluator reuses SWE-bench task specs and grading, but it is a
 runtime port of the Docker harness. For strict official comparison, note that
 the evaluation was run with Apptainer-converted images.
+
+## SWE-smith collection pipeline
+
+The SWE-smith path is deliberately separate from the Verified evaluation run.
+It preserves four predictions at each of two temperatures for every training
+task through all three phases:
+
+1. Collection expands each selected task into 8 sample slots: four each at
+   `0.6` and `0.7`.
+2. Evaluation merges shards within each slot and evaluates all 8 slots.
+3. Analysis joins outcomes per task and writes per-temperature pass@1…4 plus
+   explicitly labelled mixed-temperature pool views.
+
+Run the cluster environment setup once after syncing. It now installs both
+mini-swe-agent-plus and the official SWE-smith package:
+
+```bash
+bash cluster/setup_rollout_env.sh
+```
+
+Preview the two-task smoke run:
+
+```bash
+DRY_RUN=1 cluster/submit_swesmith_smoke.sh
+```
+
+Submit it:
+
+```bash
+cluster/submit_swesmith_smoke.sh
+```
+
+The bounded pilot defaults to 30 tasks over three collection shards:
+
+```bash
+DRY_RUN=1 cluster/submit_swesmith_pilot.sh
+cluster/submit_swesmith_pilot.sh
+```
+
+To prebuild only the cache images needed by the pilot and then run the
+collection, evaluation, and analysis jobs as one PBS dependency chain:
+
+```bash
+DRY_RUN=1 cluster/submit_swesmith_pilot_with_cache.sh
+cluster/submit_swesmith_pilot_with_cache.sh
+```
+
+This helper pins the pilot to the first 30 IDs in
+`data/splits/swesmith_train_5000_instance_ids.txt`. Set `RUN_NAME`,
+`TASK_IDS_FILE`, `TASK_LIMIT`, or `NUM_SHARDS` before the command to override
+those defaults. The cache stage uses the full cache-builder logic with only
+the selected SWE-smith tasks and eight concurrent image pulls.
+
+The smoke jobs match the Verified smoke allocation: collection uses four CPU
+cores, one GPU, and 32 GB of memory, while evaluation uses four CPU cores and
+32 GB. Smoke defaults to two rollout and two evaluation workers. Each pilot
+collection shard uses eight CPU cores, one GPU, and 48 GB with five rollout
+workers; pilot evaluation uses 16 CPU cores, 128 GB, and 12 workers. Each full
+collection shard uses 12 CPU cores, one GPU, and 64 GB with six rollout
+workers. Full evaluation uses 32 CPU cores, 256 GB, and 25 workers. Full
+analysis uses four CPU cores, 32 GB, and a three-hour walltime; smoke and pilot
+analysis retain the smaller two-CPU, 8 GB, one-hour template.
+
+Each temperature receives four independent runs. Every task/sample pair also
+receives a stable seed derived from `BASE_SEED=42`.
+The full submission wrapper defaults to the tracked 5,000-task training sample,
+50 shards, and 5,000 expected predictions. Each collection shard has a
+24-hour walltime:
+
+```bash
+DRY_RUN=1 cluster/submit_swesmith_full.sh
+cluster/submit_swesmith_full.sh
+```
+
+The corresponding 500-task validation command and complete deterministic
+sampling policy are documented in `data/splits/README.md`.
+
+To select the complete pinned 50,908-task Python split explicitly:
+
+```bash
+TASK_IDS_FILE= EXPECTED_TASKS=50908 DRY_RUN=1 \
+  cluster/submit_swesmith_full.sh
+TASK_IDS_FILE= EXPECTED_TASKS=50908 \
+  cluster/submit_swesmith_full.sh
+```
+
+The complete split produces 407,264 trajectories across eight samples per
+task, so inspect the dry run and cluster array limits before submitting it.
+For any other subset, set `TASK_IDS_FILE` and `EXPECTED_TASKS` together.
+
+`EXPECTED_TASKS` is checked against the selected dataset before collection and
+independently for all 8 merged sample files. Collection and evaluation jobs
+also fail on infrastructure outcomes instead of turning them into unresolved
+model attempts. Limit/context terminations remain valid model outcomes with
+empty patches, and resumed collection jobs retry only failed sample slots. All four
+temperature replicates for a task are assigned to the same collection shard,
+while the `ROLLOUT_WORKERS` pool can run sample slots concurrently.
+
+The collector passes each subprocess its already-selected task JSON through the
+tracked `debug_depo.miniswe_task` adapter. This preserves the pinned official
+mini-swe runners and per-trajectory process isolation without reloading the
+entire Hugging Face split for every trajectory. Because SWE-smith images are
+repository-level, the generated startup command checks out the selected task
+branch before the agent starts. The cluster default `singularity` runner
+executes this command; mini-swe-agent-plus's `pool_way` runner does not and is
+rejected for non-mock SWE-smith collection.
+
+The tracked default pins `SWE-bench/SWE-smith-py` to revision
+`77cab9055d42ab4a5c25c89a8f937096db13558e`. The setup scripts also pin the
+mini-swe-agent-plus and SWE-smith repositories. Override
+`SWESMITH_DATASET_REVISION`, `MINI_SWE_AGENT_PLUS_REVISION`, or
+`SWESMITH_REVISION` only when intentionally starting a run on a new snapshot;
+the collection manifests record the actual dependency revisions plus hashes of
+any deterministic installer patches, and reject an incompatible resume.
+
+The output layout is:
+
+```text
+$DEBUG_DEPO_SCRATCH/runs/$RUN_NAME/
+  cluster-logs/
+  collection/shard-*/
+    collection_manifest.json
+    samples/sample-0/ ... sample-7/
+  merged/sample-0/ ... sample-7/
+  evaluation/sample-0/ ... sample-7/
+  analysis/
+    rollouts.csv
+    tasks.csv
+    summary.json
+```
+
+SWE-smith currently builds and evaluates repository environments through
+Docker upstream. This cluster workflow ports the execution step to Apptainer
+and imports SWE-smith's repository profiles, test selection, timeouts, and
+grading. Keep its converted images and cache in ephemeral storage:
+
+```bash
+export SWESMITH_APPTAINER_CACHE_DIR="$RDS/ephemeral/debug-depo/swesmith_cache/apptainer-cache"
+export SWESMITH_APPTAINER_SIF_DIR="$RDS/ephemeral/debug-depo/swesmith_cache/sifs"
+```
+
+Collection and evaluation share these persistent SIFs. The first process that
+needs an image pulls it into a temporary file under a filesystem lock and then
+atomically installs the completed SIF. Other PBS shards wait for that lock and
+reuse the same file. Collection still creates a separate writable sandbox for
+each trajectory, but builds it from the local SIF under the configured `TMPDIR`
+instead of fetching `docker://...` for every rollout. Evaluation executes the
+same cached SIF read-only with writable temporary state.
+
+The mini-swe-agent-plus checkout remains pinned to its tracked upstream commit.
+The deterministic installer patch changes only cluster integration details:
+local-vLLM compatibility, the working-directory prompt, writable bind
+destinations, and persistent SIF selection. The task rows still come from the
+pinned `SWE-bench/SWE-smith-py` `train` split and are passed to the official
+mini-swe `swebench` runner by `debug_depo.miniswe_task`.
+
+For an interactive cluster workflow, open
+`notebooks/cluster_agentforge_swesmith.ipynb` with the `debug-depo` kernel.
+It keeps model launch, collection, evaluation, analysis, and PBS submission
+behind explicit switches, while previewing the submission chain by default.
+To inspect artifacts from an existing run, use
+`notebooks/inspect_swesmith_collection.ipynb` and set `RUN_NAME` or `RUN_ROOT`
+if the run is not named `swesmith-pilot`.

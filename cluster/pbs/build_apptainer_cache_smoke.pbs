@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+#PBS -N apptainer-cache-smoke
+#PBS -l select=1:ncpus=8:mem=64gb
+#PBS -l walltime=24:00:00
+# Output and error paths are supplied by the submission wrapper.
+
+set -euo pipefail
+cd "$PBS_O_WORKDIR"
+export CACHE_BUILD_MODE=smoke
+export CACHE_BUILD_MAX_WORKERS="${CACHE_BUILD_MAX_WORKERS:-2}"
+cluster/run_apptainer_cache_job.sh

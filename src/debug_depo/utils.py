@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
+import importlib.metadata
+import importlib.util
 import json
 import os
 import re
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Iterator, MutableMapping
@@ -124,3 +128,44 @@ def first_present(mapping: dict[str, Any] | None, keys: Iterable[str], default: 
         if key in mapping:
             return mapping[key]
     return default
+
+
+def package_provenance(distribution: str, module: str) -> dict[str, str | None]:
+    """Return the installed version and exact nearby Git state for a dependency."""
+
+    try:
+        version = importlib.metadata.version(distribution)
+    except importlib.metadata.PackageNotFoundError:
+        version = None
+
+    revision = None
+    working_tree_diff_sha256 = None
+    spec = importlib.util.find_spec(module)
+    if spec is not None and spec.origin:
+        origin = Path(spec.origin).resolve()
+        candidates = [origin.parent, *list(origin.parents)[:3]]
+        for candidate in candidates:
+            if not (candidate / ".git").exists():
+                continue
+            completed = subprocess.run(
+                ["git", "-C", str(candidate), "rev-parse", "HEAD"],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            if completed.returncode == 0:
+                revision = completed.stdout.strip() or None
+                diff = subprocess.run(
+                    ["git", "-C", str(candidate), "diff", "--binary", "HEAD"],
+                    capture_output=True,
+                    check=False,
+                )
+                if diff.returncode == 0 and diff.stdout:
+                    working_tree_diff_sha256 = hashlib.sha256(diff.stdout).hexdigest()
+            break
+
+    return {
+        "version": version,
+        "revision": revision,
+        "working_tree_diff_sha256": working_tree_diff_sha256,
+    }

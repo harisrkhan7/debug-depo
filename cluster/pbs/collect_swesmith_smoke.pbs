@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+#PBS -N swesmith-smoke-collect
+#PBS -l select=1:ncpus=4:ngpus=1:mem=32gb
+#PBS -l walltime=24:00:00
+# Output and error paths are supplied by the submission wrapper.
+
+set -euo pipefail
+cd "$PBS_O_WORKDIR"
+export NUM_SHARDS=1
+export SHARD_INDEX=0
+cluster/run_swesmith_collection_job.sh

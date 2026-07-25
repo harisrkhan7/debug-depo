@@ -31,12 +31,11 @@ rsync_args=(
   --exclude ".venv"
   --exclude "__pycache__"
   --exclude "cluster/apptainer/*.sif"
-  --exclude "cluster/logs/*"
   --exclude "cluster/env/local.sh"
   --exclude "data/processed/*"
   --exclude "external/*"
   --exclude "results/*"
-  --exclude "scratch/*"
+  --exclude "scratch/"
 )
 
 if "$RSYNC_BIN" --help 2>&1 | grep -q -- "--info"; then

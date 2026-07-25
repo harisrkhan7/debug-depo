@@ -6,6 +6,10 @@ UV_BIN="${UV:-uv}"
 export UV_CACHE_DIR="${UV_CACHE_DIR:-$ROOT_DIR/.uv-cache}"
 
 DATASET="${DATASET:-princeton-nlp/SWE-bench_Verified}"
+DATASET_REVISION="${SWEBENCH_DATASET_REVISION:-}"
+if [[ -z "$DATASET_REVISION" && "$DATASET" == "princeton-nlp/SWE-bench_Verified" ]]; then
+  DATASET_REVISION="c104f840cc67f8b6eec6f759ebc8b2693d585d4a"
+fi
 SPLIT="${SPLIT:-test}"
 PREDICTIONS_PATH="${PREDICTIONS_PATH:-$ROOT_DIR/data/processed/agentforge_swebench_verified/predictions.jsonl}"
 MODEL="${AGENTFORGE_MODEL:-Kwai-Klear/Klear-AgentForge-8B-SFT}"
@@ -39,6 +43,12 @@ args=(
   --max-workers "$MAX_WORKERS"
   --timeout "$TIMEOUT"
 )
+if [[ -n "$DATASET_REVISION" ]]; then
+  args+=(--dataset-revision "$DATASET_REVISION")
+fi
+if [[ "${DRY_RUN:-0}" != "1" ]]; then
+  args+=(--require-complete)
+fi
 
 if [[ -n "$APPTAINER_CACHE_DIR" ]]; then
   args+=(--apptainer-cache-dir "$APPTAINER_CACHE_DIR")

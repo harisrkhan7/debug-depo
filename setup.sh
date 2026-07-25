@@ -10,6 +10,7 @@ mkdir -p \
   "$ROOT_DIR/cluster/pbs" \
   "$ROOT_DIR/cluster/slurm" \
   "$ROOT_DIR/data/processed/agentforge_swebench_verified" \
+  "$ROOT_DIR/data/processed/swesmith_collection" \
   "$ROOT_DIR/data/raw" \
   "$ROOT_DIR/data/splits" \
   "$ROOT_DIR/results/swebench"
@@ -42,4 +43,7 @@ Real AgentForge rollout:
 
 Official SWE-bench evaluation:
   scripts/evaluate_all.sh
+
+SWE-smith smoke pipeline:
+  DRY_RUN=1 cluster/submit_swesmith_smoke.sh
 MSG

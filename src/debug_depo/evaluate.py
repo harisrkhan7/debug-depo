@@ -229,6 +229,15 @@ def run_evaluation(args: argparse.Namespace) -> dict[str, Any]:
     if args.summary_output:
         write_json(args.summary_output, summary)
     print(json.dumps(summary, indent=2))
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"SWE-bench evaluator exited with status {completed.returncode}"
+        )
+    if report is None:
+        raise RuntimeError(
+            "SWE-bench evaluator completed without producing the expected report: "
+            f"{report_path}"
+        )
     return summary
 
 

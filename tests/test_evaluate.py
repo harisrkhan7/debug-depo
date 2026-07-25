@@ -3,6 +3,8 @@ import subprocess
 from argparse import Namespace
 from pathlib import Path
 
+import pytest
+
 from debug_depo import evaluate
 from debug_depo.evaluate import build_evaluation_command, model_report_name, summarize_report
 
@@ -163,3 +165,23 @@ def test_run_evaluation_moves_harness_report_from_eval_cwd(tmp_path, monkeypatch
     assert summary["report_path"] == str(expected_report)
     assert summary["status"] == "ok"
     assert summary["resolved_instances"] == 1
+
+
+def test_run_evaluation_rejects_a_failed_harness(tmp_path, monkeypatch):
+    eval_cwd = tmp_path / "eval"
+    eval_cwd.mkdir()
+
+    monkeypatch.setattr(
+        evaluate.subprocess,
+        "run",
+        lambda command, cwd, check: subprocess.CompletedProcess(command, 9),
+    )
+
+    with pytest.raises(RuntimeError, match="exited with status 9"):
+        evaluate.run_evaluation(
+            args(
+                eval_cwd=str(eval_cwd),
+                report_dir=str(tmp_path / "reports"),
+                instance_ids=[],
+            )
+        )

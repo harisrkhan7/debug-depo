@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-#PBS -N agentforge-verified-eval
+#PBS -N agentforge-verified-full-eval
 #PBS -l select=1:ncpus=32:mem=256gb
 #PBS -l walltime=12:00:00
-#PBS -o cluster/logs/
-#PBS -e cluster/logs/
+# Output and error paths are supplied by the submission wrapper.
 
 set -euo pipefail
 cd "$PBS_O_WORKDIR"
 export EVALUATION_MODE=full
 export EVAL_MAX_WORKERS="${EVAL_MAX_WORKERS:-20}"
-cluster/run_evaluation_job.sh
+cluster/run_verified_evaluation_job.sh

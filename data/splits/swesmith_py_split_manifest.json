@@ -1,0 +1,70 @@
+{
+  "actual_validation_fraction": 0.100161074880176,
+  "dataset": "SWE-bench/SWE-smith-py",
+  "dataset_instance_ids_sha256": "72bf47d7d5fe6e26c407fcc294bd94bddf3d05a5a145bf11a4a7ba8899dd4775",
+  "dataset_revision": "77cab9055d42ab4a5c25c89a8f937096db13558e",
+  "group_field": "repo",
+  "n_total": 50908,
+  "n_train": 45809,
+  "n_train_repositories": 117,
+  "n_validation": 5099,
+  "n_validation_repositories": 14,
+  "requested_validation_fraction": 0.1,
+  "schema_version": 2,
+  "seed": 42,
+  "source_split": "train",
+  "strategy": "repository_disjoint_hash_ranked_greedy",
+  "task_subsets": {
+    "allocation": "one_per_repository_then_greatest_proportional_deficit",
+    "cache": {
+      "file": "data/splits/swesmith_cache_5500_instance_ids.txt",
+      "n_repositories": 131,
+      "n_tasks": 5500,
+      "sha256": "bb30e676638ee5e1745ff4da73b9096a812d1e2198911652887d2016353d95c7",
+      "sources": [
+        "swesmith_train_5000_instance_ids.txt",
+        "swesmith_validation_500_instance_ids.txt"
+      ]
+    },
+    "group_field": "instance_id_without_final_dot_component",
+    "ordering": "sha256_hash_order",
+    "seed": 42,
+    "selection": "sha256_hash_rank_without_replacement",
+    "strategy": "repository_covering_proportional_hash_sample",
+    "strategy_version": 1,
+    "trajectory": {
+      "file": "data/splits/swesmith_train_5000_instance_ids.txt",
+      "n_repositories": 117,
+      "n_tasks": 5000,
+      "sha256": "b8ccb5cbdb805fee956d1ffdf9fb95edb89169f9f9db7f3a4a0aca4c7f317aed",
+      "source": "train_instance_ids.txt"
+    },
+    "validation": {
+      "file": "data/splits/swesmith_validation_500_instance_ids.txt",
+      "n_repositories": 14,
+      "n_tasks": 500,
+      "sha256": "dd6342f7f4cb79ea206f523517fef7f3367f4a779cf0c088abf5b0e91088b154",
+      "source": "validation_instance_ids.txt"
+    }
+  },
+  "train_instance_ids_file": "data/splits/train_instance_ids.txt",
+  "train_instance_ids_sha256": "b34da2f98fe4c5c410b01d6d90133e53334753cad25715034b03b4be1e5abed0",
+  "validation_instance_ids_file": "data/splits/validation_instance_ids.txt",
+  "validation_instance_ids_sha256": "a98841a6d15ce365a751fb210b961146e354f242ffd9de3519327fbd7696da53",
+  "validation_repositories": [
+    "swesmith/HIPS__autograd.ac044f0d",
+    "swesmith/aio-libs__async-timeout.d0baa9f1",
+    "swesmith/cknd__stackprinter.219fcc52",
+    "swesmith/dask__dask.5f61e423",
+    "swesmith/django-money__django-money.835c1ab8",
+    "swesmith/django__daphne.32ac73e1",
+    "swesmith/pandas-dev__pandas.95280573",
+    "swesmith/pndurette__gTTS.dbcda4f3",
+    "swesmith/pydata__patsy.a5d16484",
+    "swesmith/pyparsing__pyparsing.533adf47",
+    "swesmith/python__mypy.e93f06ce",
+    "swesmith/r1chardj0n3s__parse.30da9e4f",
+    "swesmith/rubik__radon.54b88e58",
+    "swesmith/stanfordnlp__string2string.c4a72f59"
+  ]
+}

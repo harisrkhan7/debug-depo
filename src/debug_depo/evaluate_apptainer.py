@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
-import re
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -24,76 +25,46 @@ from swebench.harness.constants import (
 )
 from swebench.harness.grading import get_eval_report
 from swebench.harness.test_spec.test_spec import make_test_spec
-from swebench.harness.utils import get_predictions_from_file, load_swebench_dataset
+from swebench.harness.utils import get_predictions_from_file
 
+from debug_depo.apptainer_cache import (
+    DEFAULT_SWEBENCH_IMAGE_TEMPLATE,
+    image_uri_from_template,
+    pull_sif_if_missing,
+    sif_path_for_image,
+)
 from debug_depo.constants import DEFAULT_SWEBENCH_DATASET, DEFAULT_SWEBENCH_SPLIT
-from debug_depo.data import read_instance_ids_file
+from debug_depo.data import (
+    load_swebench_tasks,
+    read_instance_ids_file,
+    resolve_swebench_dataset_revision,
+)
 from debug_depo.evaluate import model_report_name, path_from_cwd, summarize_report
-from debug_depo.utils import ensure_dir, load_hf_token_from_file, slugify, write_json
-
-
-DEFAULT_IMAGE_TEMPLATE = (
-    "docker://ghcr.io/epoch-research/swe-bench.eval.x86_64.{instance_id}:latest"
+from debug_depo.utils import (
+    ensure_dir,
+    load_hf_token_from_file,
+    package_provenance,
+    write_json,
 )
+
+
+DEFAULT_IMAGE_TEMPLATE = DEFAULT_SWEBENCH_IMAGE_TEMPLATE
 EVAL_BIND_DIR = "/swebench_eval"
-_IMAGE_TEMPLATE_TAG_IN_FIELD = re.compile(
-    r"\{(instance_id|instance_id_lower|image_key):([^{}]+)\}"
+CACHE_KEY_SCHEMA_VERSION = 2
+SCORED_STATUSES = frozenset(
+    {
+        "completed",
+        "cached_report",
+        "empty_patch",
+        "patch_failed",
+        "timeout",
+    }
 )
-
-
-def normalize_image_template(template: str) -> str:
-    """Accept the common `{instance_id:tag}` typo for Docker image templates."""
-
-    return _IMAGE_TEMPLATE_TAG_IN_FIELD.sub(r"{\1}:\2", template)
-
-
-def image_uri_from_template(template: str, instance_id: str, image_key: str = "") -> str:
-    normalized_template = normalize_image_template(template)
-    try:
-        return normalized_template.format(
-            instance_id=instance_id,
-            instance_id_lower=instance_id.lower(),
-            image_key=image_key,
-        )
-    except (KeyError, ValueError) as exc:
-        raise ValueError(
-            "Invalid Apptainer image template "
-            f"{template!r}. Use placeholders like '{{instance_id}}' and put Docker "
-            "tags after the closing brace, e.g. "
-            "'docker://...swe-bench.eval.x86_64.{instance_id}:latest'."
-        ) from exc
-
-
-def sif_path_for_instance(sif_dir: str | Path, instance_id: str) -> Path:
-    return Path(sif_dir) / f"{slugify(instance_id)}.sif"
-
-
 def collect_instance_ids(args: argparse.Namespace) -> list[str]:
     ids = list(args.instance_ids or [])
     if args.instance_ids_file:
         ids.extend(read_instance_ids_file(args.instance_ids_file))
     return ids
-
-
-def pull_sif_if_missing(
-    *,
-    sif_path: Path,
-    image_uri: str,
-    cache_dir: str | Path | None,
-    dry_run: bool = False,
-) -> list[str]:
-    command = ["apptainer", "pull", str(sif_path), image_uri]
-    if sif_path.exists():
-        return command
-    ensure_dir(sif_path.parent)
-    if dry_run:
-        return command
-    env = os.environ.copy()
-    if cache_dir:
-        ensure_dir(cache_dir)
-        env["APPTAINER_CACHEDIR"] = str(cache_dir)
-    subprocess.run(command, env=env, check=True)
-    return command
 
 
 def write_runner_script(log_dir: Path) -> Path:
@@ -159,6 +130,66 @@ def model_log_name(prediction: dict[str, Any]) -> str:
     return str(prediction.get(KEY_MODEL, "None")).replace("/", "__")
 
 
+@lru_cache(maxsize=1)
+def _swebench_provenance() -> dict[str, str | None]:
+    provenance = package_provenance("swebench", "swebench")
+    return {
+        "swebench_version": provenance["version"],
+        "swebench_revision": provenance["revision"],
+        "swebench_working_tree_diff_sha256": provenance[
+            "working_tree_diff_sha256"
+        ],
+    }
+
+
+def _evaluation_cache_key(
+    instance: dict[str, Any],
+    prediction: dict[str, Any],
+    args: argparse.Namespace,
+    test_spec: Any,
+) -> dict[str, Any]:
+    patch = prediction.get(KEY_PREDICTION)
+    patch_text = patch if isinstance(patch, str) else ""
+    instance_payload = json.dumps(
+        instance,
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    )
+    return {
+        "schema_version": CACHE_KEY_SCHEMA_VERSION,
+        "dataset": args.dataset,
+        "dataset_revision": args.dataset_revision,
+        "split": args.split,
+        "model_name_or_path": prediction.get(KEY_MODEL, ""),
+        "patch_sha256": hashlib.sha256(patch_text.encode("utf-8")).hexdigest(),
+        "instance_sha256": hashlib.sha256(instance_payload.encode("utf-8")).hexdigest(),
+        "eval_script_sha256": hashlib.sha256(
+            str(test_spec.eval_script).encode("utf-8")
+        ).hexdigest(),
+        "instance_image_key": str(test_spec.instance_image_key),
+        "image_template": args.image_template,
+        **_swebench_provenance(),
+    }
+
+
+def _load_cached_report(
+    report_path: Path,
+    cache_key_path: Path,
+    expected_key: dict[str, Any],
+) -> dict[str, Any] | None:
+    if not report_path.is_file() or not cache_key_path.is_file():
+        return None
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        cache_key = json.loads(cache_key_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(report, dict) or cache_key != expected_key:
+        return None
+    return report
+
+
 def run_instance(
     instance: dict[str, Any],
     prediction: dict[str, Any],
@@ -170,17 +201,36 @@ def run_instance(
         Path(args.log_dir) / args.run_id / model_log_name(prediction) / instance_id
     )
     report_path = log_dir / LOG_REPORT
-    if report_path.exists() and not args.overwrite:
-        return {"instance_id": instance_id, "status": "cached_report", "report_path": str(report_path)}
+    cache_key_path = log_dir / "cache_key.json"
+    cache_key = _evaluation_cache_key(instance, prediction, args, test_spec)
+    report = (
+        None
+        if args.overwrite
+        else _load_cached_report(report_path, cache_key_path, cache_key)
+    )
+    if report is not None:
+        return {
+            "instance_id": instance_id,
+            "status": "cached_report",
+            "resolved": bool(report.get(instance_id, {}).get("resolved", False)),
+            "report_path": str(report_path),
+        }
 
     patch = prediction.get(KEY_PREDICTION)
     if patch in ("", None):
+        if not args.dry_run:
+            report_path.unlink(missing_ok=True)
+            cache_key_path.unlink(missing_ok=True)
         return {"instance_id": instance_id, "status": "empty_patch"}
+
+    if not args.dry_run:
+        report_path.unlink(missing_ok=True)
+        cache_key_path.unlink(missing_ok=True)
 
     image_uri = image_uri_from_template(
         args.image_template, instance_id, image_key=test_spec.instance_image_key
     )
-    sif_path = sif_path_for_instance(args.sif_dir, instance_id)
+    sif_path = sif_path_for_image(args.sif_dir, image_uri)
     pull_command = pull_sif_if_missing(
         sif_path=sif_path,
         image_uri=image_uri,
@@ -246,6 +296,7 @@ def run_instance(
         include_tests_status=True,
     )
     write_json(report_path, report)
+    write_json(cache_key_path, cache_key)
     resolved = bool(report.get(instance_id, {}).get("resolved", False))
     return {
         "instance_id": instance_id,
@@ -329,15 +380,45 @@ def run_apptainer_evaluation(args: argparse.Namespace) -> dict[str, Any]:
     if args.apptainer_cache_dir:
         args.apptainer_cache_dir = str(path_from_cwd(args.apptainer_cache_dir))
     args.instance_ids = collect_instance_ids(args)
+    args.dataset_revision = resolve_swebench_dataset_revision(
+        args.dataset,
+        args.dataset_revision,
+    )
 
-    predictions_list = get_predictions_from_file(args.predictions_path, args.dataset, args.split)
-    predictions = {str(pred[KEY_INSTANCE_ID]): pred for pred in predictions_list}
-    dataset = [
-        dict(instance)
-        for instance in load_swebench_dataset(
-            args.dataset, args.split, args.instance_ids or None
+    dataset = load_swebench_tasks(
+        args.dataset,
+        args.split,
+        revision=args.dataset_revision,
+    )
+    if args.instance_ids:
+        requested_ids = set(args.instance_ids)
+        dataset_ids = {str(instance[KEY_INSTANCE_ID]) for instance in dataset}
+        missing_ids = sorted(requested_ids - dataset_ids)
+        if missing_ids:
+            raise ValueError(
+                "Instance ids not found: " + ", ".join(missing_ids)
+            )
+        dataset = [
+            instance
+            for instance in dataset
+            if str(instance[KEY_INSTANCE_ID]) in requested_ids
+        ]
+    if args.predictions_path == "gold":
+        predictions_list = [
+            {
+                KEY_INSTANCE_ID: instance[KEY_INSTANCE_ID],
+                KEY_PREDICTION: instance["patch"],
+                KEY_MODEL: "gold",
+            }
+            for instance in dataset
+        ]
+    else:
+        predictions_list = get_predictions_from_file(
+            args.predictions_path,
+            args.dataset,
+            args.split,
         )
-    ]
+    predictions = {str(pred[KEY_INSTANCE_ID]): pred for pred in predictions_list}
     if args.limit is not None:
         dataset = dataset[: args.limit]
     missing_predictions = [
@@ -348,39 +429,43 @@ def run_apptainer_evaluation(args: argparse.Namespace) -> dict[str, Any]:
     if missing_predictions:
         print(f"Warning: missing predictions for {len(missing_predictions)} selected instances.")
 
+    missing_results = [
+        {
+            "instance_id": str(instance[KEY_INSTANCE_ID]),
+            "status": "missing_prediction",
+        }
+        for instance in dataset
+        if str(instance[KEY_INSTANCE_ID]) not in predictions
+    ]
     runnable = [
         instance
         for instance in dataset
         if str(instance[KEY_INSTANCE_ID]) in predictions
-        and predictions[str(instance[KEY_INSTANCE_ID])].get(KEY_PREDICTION) not in ("", None)
     ]
-    results: list[dict[str, Any]] = []
+    results: list[dict[str, Any]] = missing_results
+
+    def run_safely(instance: dict[str, Any]) -> dict[str, Any]:
+        instance_id = str(instance[KEY_INSTANCE_ID])
+        try:
+            return run_instance(instance, predictions[instance_id], args)
+        except Exception as exc:
+            return {
+                "instance_id": instance_id,
+                "status": "error",
+                "error": repr(exc),
+            }
+
     if args.max_workers <= 1:
         for instance in runnable:
-            instance_id = str(instance[KEY_INSTANCE_ID])
-            results.append(run_instance(instance, predictions[instance_id], args))
+            results.append(run_safely(instance))
     else:
         with ThreadPoolExecutor(max_workers=args.max_workers) as pool:
             futures = {
-                pool.submit(
-                    run_instance,
-                    instance,
-                    predictions[str(instance[KEY_INSTANCE_ID])],
-                    args,
-                ): str(instance[KEY_INSTANCE_ID])
+                pool.submit(run_safely, instance): str(instance[KEY_INSTANCE_ID])
                 for instance in runnable
             }
             for future in as_completed(futures):
-                try:
-                    results.append(future.result())
-                except Exception as exc:
-                    results.append(
-                        {
-                            "instance_id": futures[future],
-                            "status": "error",
-                            "error": repr(exc),
-                        }
-                    )
+                results.append(future.result())
 
     report = aggregate_report(
         dataset,
@@ -390,9 +475,21 @@ def run_apptainer_evaluation(args: argparse.Namespace) -> dict[str, Any]:
     )
     report_path = Path(args.report_dir) / model_report_name(args.model, args.run_id)
     write_json(report_path, report)
+    status_ids: dict[str, list[str]] = {}
+    for result in results:
+        status_ids.setdefault(str(result["status"]), []).append(str(result["instance_id"]))
     summary = {
+        "dataset_revision": args.dataset_revision,
+        **_swebench_provenance(),
         "report_path": str(report_path),
         "results": results,
+        "scored_instances": sum(
+            str(result.get("status")) in SCORED_STATUSES for result in results
+        ),
+        "status_ids": {
+            status: sorted(instance_ids)
+            for status, instance_ids in sorted(status_ids.items())
+        },
         **summarize_report(
             report,
             dataset=args.dataset,
@@ -403,12 +500,31 @@ def run_apptainer_evaluation(args: argparse.Namespace) -> dict[str, Any]:
     if args.summary_output:
         write_json(args.summary_output, summary)
     print(json.dumps(summary, indent=2))
+    if args.require_complete:
+        failed_statuses = {
+            status: len(instance_ids)
+            for status, instance_ids in summary["status_ids"].items()
+            if status not in SCORED_STATUSES
+        }
+        if failed_statuses:
+            raise RuntimeError(
+                "SWE-bench evaluation produced unscored infrastructure outcomes: "
+                f"{failed_statuses}"
+            )
     return summary
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run SWE-bench evaluation with Apptainer.")
     parser.add_argument("--dataset", default=DEFAULT_SWEBENCH_DATASET)
+    parser.add_argument(
+        "--dataset-revision",
+        default=os.getenv("SWEBENCH_DATASET_REVISION"),
+        help=(
+            "Hugging Face dataset revision. The proven SWE-bench Verified revision "
+            "is selected automatically for the default dataset."
+        ),
+    )
     parser.add_argument("--split", default=DEFAULT_SWEBENCH_SPLIT)
     parser.add_argument("--predictions-path", required=True)
     parser.add_argument("--model", required=True)
@@ -422,6 +538,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout", type=int, default=1800)
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--require-complete", action="store_true")
     parser.add_argument("--log-dir", default="logs/run_evaluation")
     parser.add_argument(
         "--sif-dir",

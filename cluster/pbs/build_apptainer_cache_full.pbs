@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+#PBS -N apptainer-cache-full
+#PBS -l select=1:ncpus=32:mem=128gb
+#PBS -l walltime=48:00:00
+# Output and error paths are supplied by the submission wrapper.
+
+set -euo pipefail
+cd "$PBS_O_WORKDIR"
+export CACHE_BUILD_MODE=full
+export CACHE_BUILD_MAX_WORKERS="${CACHE_BUILD_MAX_WORKERS:-20}"
+cluster/run_apptainer_cache_job.sh

@@ -3,11 +3,10 @@
 #PBS -J 0-9
 #PBS -l select=1:ncpus=12:ngpus=1:mem=64gb
 #PBS -l walltime=10:00:00
-#PBS -o cluster/logs/
-#PBS -e cluster/logs/
+# Output and error paths are supplied by the submission wrapper.
 
 set -euo pipefail
 cd "$PBS_O_WORKDIR"
 export COLLECTION_MODE=full
-export ROLLOUT_WORKERS="${ROLLOUT_WORKERS:-8}"
-cluster/run_collection_job.sh
+export ROLLOUT_WORKERS="${ROLLOUT_WORKERS:-6}"
+cluster/run_verified_collection_job.sh

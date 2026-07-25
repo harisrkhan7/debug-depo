@@ -4,6 +4,10 @@ from __future__ import annotations
 
 DEFAULT_SWEBENCH_DATASET = "princeton-nlp/SWE-bench_Verified"
 DEFAULT_SWEBENCH_SPLIT = "test"
+DEFAULT_SWEBENCH_DATASET_REVISION = "c104f840cc67f8b6eec6f759ebc8b2693d585d4a"
+DEFAULT_SWESMITH_DATASET = "SWE-bench/SWE-smith-py"
+DEFAULT_SWESMITH_SPLIT = "train"
+DEFAULT_SWESMITH_DATASET_REVISION = "77cab9055d42ab4a5c25c89a8f937096db13558e"
 
 # Override this if Kwai/Klear release the checkpoint under a different namespace.
 DEFAULT_AGENTFORGE_MODEL = "Kwai-Klear/Klear-AgentForge-8B-SFT"

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+#PBS -N build-depo-data
+#PBS -l select=1:ncpus=2:mem=16gb
+#PBS -l walltime=01:00:00
+# Output and error paths are supplied by the submission wrapper.
+
+set -euo pipefail
+cd "$PBS_O_WORKDIR"
+source cluster/load_job_environment.sh
+source cluster/env/load.sh
+
+scripts/build_depo_data.sh

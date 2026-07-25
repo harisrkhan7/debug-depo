@@ -416,3 +416,76 @@ evaluation, and analysis. Use `notebooks/inspect_swesmith_collection.ipynb` to
 inspect an existing run's shard coverage, temperatures, raw agent messages and
 patches, per-instance evaluation reports, and per-temperature pass@1…4 plus
 the explicitly labelled mixed-temperature pool metrics.
+
+## DMPO and DEPO training data
+
+Build post-training data only after collection and evaluation are complete.
+Both builders read the raw mini-swe message histories, per-call token usage,
+and evaluation outcomes directly from the SWE-smith run. Provider response
+payloads are removed, while the multi-turn assistant actions and environment
+observations are retained.
+
+DMPO is pairwise. For every task, a resolved trajectory is preferred to an
+unresolved trajectory. Between two resolved trajectories, the cheaper one is
+preferred only when the configured cost ratio is met. Unresolved-versus-
+unresolved cost pairs are excluded by default so that cheap failure is never a
+positive training signal.
+
+```bash
+RUN_ROOT=scratch/cluster-artifacts/runs/swesmith-pilot-20260719 \
+  scripts/build_dmpo_pairs.sh
+```
+
+The default cost is accumulated API `total_tokens` (prompt plus completion),
+which matches the debugging-cost objective. Set
+`TOKEN_METRIC=completion_tokens` for a generated-token-only objective,
+`MIN_COST_RATIO=1.25` to require 25% savings, or
+`MAX_PAIRS_PER_TASK=8` to cap correlated pairs.
+
+DEPO is not a pairwise objective. It is an efficiency-aware KTO objective over
+independently labelled desirable and undesirable trajectories. Resolved
+rollouts are desirable and scored non-resolved rollouts are undesirable.
+Each record contains total steps, completion and total tokens per step, and
+their inverses. A DEPO trainer can therefore use either the paper's generated
+token bonus or the billed-token variant:
+
+```text
+b(trajectory) =
+  alpha1 * inverse_{completion|total}_tokens_per_step
+  + alpha2 * inverse_steps
+```
+
+```bash
+RUN_ROOT=scratch/cluster-artifacts/runs/swesmith-pilot-20260719 \
+  scripts/build_depo_data.sh
+```
+
+Outputs are written under:
+
+```text
+<run-root>/preference-data/
+  dmpo/pairs.jsonl
+  dmpo/summary.json
+  depo/trajectories.jsonl
+  depo/desirable.jsonl
+  depo/undesirable.jsonl
+  depo/summary.json
+```
+
+On PBS, preview and submit both CPU-only data jobs with:
+
+```bash
+RUN_NAME=swesmith-pilot-20260719 DRY_RUN=1 \
+  cluster/submit_preference_data.sh
+RUN_NAME=swesmith-pilot-20260719 \
+  cluster/submit_preference_data.sh
+```
+
+The submission wrapper schedules `DMPO data -> DEPO data` with an `afterok`
+dependency. The datasets themselves are independent; the dependency gives a
+clear operational order and prevents a partial handoff. For model training,
+fine-tune the Klear AgentForge checkpoint with DMPO first, then use the
+resulting DMPO checkpoint as both the DEPO initialization and its frozen
+reference policy. Keep a held-out repository-disjoint validation set and
+select checkpoints on success rate subject to total-token cost; optimizing
+token cost without the success constraint can reward premature termination.

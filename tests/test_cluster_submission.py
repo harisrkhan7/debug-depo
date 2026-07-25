@@ -16,7 +16,9 @@ RUN_SETTING_NAMES = {
     "CLUSTER_LOG_DIR",
     "CONTEXT_LENGTH",
     "DATASET",
+    "DEPO_OUTPUT_DIR",
     "DEBUG_DEPO_SCRATCH",
+    "DMPO_OUTPUT_DIR",
     "DRY_RUN",
     "EVAL_MAX_WORKERS",
     "EVAL_TIMEOUT",
@@ -26,6 +28,8 @@ RUN_SETTING_NAMES = {
     "HARNESS",
     "LIMIT",
     "MAX_STEPS",
+    "MAX_PAIRS_PER_TASK",
+    "MIN_COST_RATIO",
     "MINI_SWE_ENVIRONMENT_CLASS",
     "MINI_SWE_CONFIG",
     "MINI_SWE_MODEL",
@@ -57,9 +61,11 @@ RUN_SETTING_NAMES = {
     "TASK_LIMIT",
     "TEMPERATURE",
     "TEMPERATURES",
+    "TOKEN_METRIC",
     "TOTAL_SAMPLES",
     "TIMEOUT_SECONDS",
     "TOP_P",
+    "INCLUDE_FAILURE_EFFICIENCY_PAIRS",
 }
 
 
@@ -257,6 +263,20 @@ def test_swesmith_pilot_is_small_by_default():
         encoding="utf-8"
     )
     assert "#PBS -J 0-2" in pilot_pbs
+
+
+def test_preference_data_submission_orders_dmpo_before_depo():
+    output = dry_run(
+        "cluster/submit_preference_data.sh",
+        RUN_NAME="swesmith-pilot-20260719",
+    )
+
+    assert "Run root:" in output
+    assert "TOKEN_METRIC=total_tokens" in output
+    assert "MIN_COST_RATIO=1.1" in output
+    assert "cluster/pbs/build_dmpo_pairs.pbs" in output
+    assert "depend=afterok:<dmpo-job-id>" in output
+    assert "cluster/pbs/build_depo_data.pbs" in output
 
 
 def test_swesmith_pilot_with_cache_is_one_dependency_chain():

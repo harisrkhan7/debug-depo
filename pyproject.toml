@@ -27,6 +27,8 @@ debug-depo-evaluate-swesmith = "debug_depo.swesmith_evaluate:main"
 debug-depo-analyze-swesmith = "debug_depo.swesmith_analyze:main"
 debug-depo-prepare-swesmith-splits = "debug_depo.prepare_swesmith_splits:main"
 debug-depo-build-apptainer-cache = "debug_depo.apptainer_cache:main"
+debug-depo-build-dmpo-pairs = "debug_depo.build_dmpo_pairs:main"
+debug-depo-build-depo-data = "debug_depo.build_depo_data:main"
 
 [project.optional-dependencies]
 dev = [

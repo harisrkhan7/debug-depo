@@ -14,6 +14,7 @@ smoke tests and full HPC runs.
 | DMPO and DEPO | Build immutable preference data, train models, and compare held-out efficiency | [Preference-training workflow](docs/preference-training.md) |
 | Research plan | Track the objective, pilot findings, implementation coverage, and references | [Preference-optimization notes](docs/preference-optimization.md) |
 | HPC | Configure storage, Apptainer, vLLM, PBS resources, and submission chains | [Cluster guide](cluster/README.md) |
+| HyperStack | Run the same workflows on one persistent H200 x8 VM | [HyperStack guide](hyperstack/README.md) |
 
 The Verified target is pinned to
 `princeton-nlp/SWE-bench_Verified@c104f840cc67f8b6eec6f759ebc8b2693d585d4a`,
@@ -120,6 +121,7 @@ hashes, and generation policy are documented in
 src/debug_depo/   Python implementation and command-line tools
 scripts/          Local collection, evaluation, data, and training entrypoints
 cluster/          PBS submission, environment, and Apptainer support
+hyperstack/       Direct H200 x8 setup, sharding, cache, training, and validation
 notebooks/        Guarded local and cluster workflows
 data/splits/      Immutable task memberships and split provenance
 docs/             Workflow and research notes

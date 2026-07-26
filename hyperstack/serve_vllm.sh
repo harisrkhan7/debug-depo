@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+HYPERSTACK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$HYPERSTACK_DIR/common.sh"
+
+require_command apptainer
+require_separate_storage
+
+GPU_ID="${GPU_ID:?Set GPU_ID to one physical GPU index.}"
+PORT="${PORT:?Set PORT to the vLLM port for this shard.}"
+VLLM_MODEL="${VLLM_MODEL:-${AGENTFORGE_MODEL:-Kwai-Klear/Klear-AgentForge-8B-SFT}}"
+SERVED_MODEL_NAME="${SERVED_MODEL_NAME:-$VLLM_MODEL}"
+if [[ "$SERVED_MODEL_NAME" == hosted_vllm/* ]]; then
+  SERVED_MODEL_NAME="${SERVED_MODEL_NAME#hosted_vllm/}"
+fi
+MAX_MODEL_LEN="${MAX_MODEL_LEN:-${CONTEXT_LENGTH:-65536}}"
+RUN_NAME="${RUN_NAME:-manual}"
+SHARD_INDEX="${SHARD_INDEX:-$GPU_ID}"
+
+if [[ -z "${HF_TOKEN:-}" && -n "${HUGGING_FACE_HUB_TOKEN:-}" ]]; then
+  export HF_TOKEN="$HUGGING_FACE_HUB_TOKEN"
+fi
+if [[ -z "${HF_TOKEN:-}" && -f "$HF_TOKEN_FILE" ]]; then
+  HF_TOKEN="$(<"$HF_TOKEN_FILE")"
+  export HF_TOKEN
+fi
+
+if ! apptainer inspect "$VLLM_IMAGE" >/dev/null 2>&1; then
+  echo "vLLM Apptainer image is missing or invalid: $VLLM_IMAGE" >&2
+  echo "Run bash hyperstack/setup.sh first." >&2
+  exit 2
+fi
+
+bind_args=(
+  --bind "$DEBUG_DEPO_ROOT:$DEBUG_DEPO_ROOT"
+  --bind "$HYPERSTACK_PERSISTENT_ROOT:$HYPERSTACK_PERSISTENT_ROOT"
+  --bind "$DEBUG_DEPO_EPHEMERAL:$DEBUG_DEPO_EPHEMERAL"
+)
+
+export CUDA_VISIBLE_DEVICES="$GPU_ID"
+export APPTAINERENV_CUDA_VISIBLE_DEVICES="$GPU_ID"
+export APPTAINERENV_HF_HOME="$HF_HOME"
+export APPTAINERENV_HF_HUB_DISABLE_XET="${HF_HUB_DISABLE_XET:-1}"
+if [[ -n "${HF_TOKEN:-}" ]]; then
+  export APPTAINERENV_HF_TOKEN="$HF_TOKEN"
+fi
+
+read -r -a vllm_extra_args <<<"${VLLM_EXTRA_ARGS:-}"
+
+apptainer exec --nv \
+  "${bind_args[@]}" \
+  --pwd "$DEBUG_DEPO_ROOT" \
+  "$VLLM_IMAGE" \
+  vllm serve "$VLLM_MODEL" \
+    --host 127.0.0.1 \
+    --port "$PORT" \
+    --served-model-name "$SERVED_MODEL_NAME" \
+    --max-model-len "$MAX_MODEL_LEN" \
+    --gpu-memory-utilization "$VLLM_GPU_MEMORY_UTILIZATION" \
+    "${vllm_extra_args[@]}" &
+vllm_pid=$!
+
+cleanup() {
+  kill "$vllm_pid" 2>/dev/null || true
+  wait "$vllm_pid" 2>/dev/null || true
+}
+trap cleanup EXIT HUP INT TERM
+wait "$vllm_pid"

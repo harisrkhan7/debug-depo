@@ -306,6 +306,9 @@ cluster/env/*
 !cluster/env/load.sh
 !cluster/env/*.example
 
+# Track portable HyperStack configuration, but keep machine-specific overrides local.
+hyperstack/local.env
+
 # Generated evaluation reports can contain absolute machine paths.
 results/**
 !results/**/

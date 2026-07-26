@@ -346,6 +346,11 @@ def test_mock_collect_evaluate_analyze_pipeline(tmp_path):
 
     assert summary["rollouts"] == 16
     assert summary["resolved_rollouts"] == 16
+    assert summary["efficiency"]["trajectories"] == 16
+    assert summary["efficiency"]["resolved_trajectories"] == 16
+    assert summary["efficiency"]["resolution_rate"] == 1.0
+    assert summary["efficiency"]["all"]["total_tokens"]["available"] == 0
+    assert summary["efficiency"]["total_tokens_per_resolved_task"] is None
     assert summary["mixed_temperature_pass_at_k"] == {
         str(index): 1.0 for index in range(1, 9)
     }

@@ -9,6 +9,7 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Iterator, MutableMapping
@@ -39,9 +40,25 @@ def read_json(path: str | Path) -> Any:
 def write_json(path: str | Path, payload: Any) -> Path:
     output_path = Path(path)
     ensure_dir(output_path.parent)
-    with output_path.open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, indent=2, sort_keys=True)
-        handle.write("\n")
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=output_path.parent,
+            prefix=f".{output_path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+            json.dump(payload, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, output_path)
+    finally:
+        if temporary_path is not None and temporary_path.exists():
+            temporary_path.unlink()
     return output_path
 
 
@@ -61,10 +78,26 @@ def read_jsonl(path: str | Path) -> list[dict[str, Any]]:
 def write_jsonl(path: str | Path, rows: Iterable[dict[str, Any]]) -> Path:
     output_path = Path(path)
     ensure_dir(output_path.parent)
-    with output_path.open("w", encoding="utf-8") as handle:
-        for row in rows:
-            handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True))
-            handle.write("\n")
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=output_path.parent,
+            prefix=f".{output_path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+            for row in rows:
+                handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True))
+                handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, output_path)
+    finally:
+        if temporary_path is not None and temporary_path.exists():
+            temporary_path.unlink()
     return output_path
 
 

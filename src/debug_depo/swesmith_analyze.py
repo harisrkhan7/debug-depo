@@ -10,6 +10,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
+from debug_depo.efficiency import summarize_efficiency
 from debug_depo.utils import read_json, read_jsonl, write_json
 
 
@@ -459,6 +460,15 @@ def analyze_swesmith(
             resolved_rollouts / len(scored_evaluations)
             if scored_evaluations
             else None
+        ),
+        "efficiency": summarize_efficiency(
+            scored_evaluations,
+            fields={
+                "action_steps": "model_api_calls",
+                "prompt_tokens": "prompt_tokens",
+                "completion_tokens": "completion_tokens",
+                "total_tokens": "total_tokens",
+            },
         ),
         "evaluation_status_counts": dict(sorted(evaluation_status_counts.items())),
         "unscored_evaluation_status_counts": unscored_evaluation_status_counts,

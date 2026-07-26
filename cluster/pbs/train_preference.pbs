@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+#PBS -N train-preference
+#PBS -l select=1:ncpus=8:ngpus=1:mem=64gb
+#PBS -l walltime=48:00:00
+# Output and error paths are supplied by the submission wrapper.
+
+set -euo pipefail
+cd "$PBS_O_WORKDIR"
+source cluster/load_job_environment.sh
+source cluster/env/load.sh
+
+export NUM_PROCESSES="${NUM_PROCESSES:-1}"
+export PACKAGE_MODEL="${PACKAGE_MODEL:-0}"
+scripts/train_preference.sh

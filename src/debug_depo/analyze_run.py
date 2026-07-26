@@ -12,6 +12,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
 
+from debug_depo.efficiency import summarize_efficiency
+
 
 CSV_COLUMNS = (
     "instance_id",
@@ -791,6 +793,15 @@ def analyze_run(
         "evaluation_status_counts": dict(sorted(evaluation_counts.items())),
         "failure_category_counts": dict(sorted(failure_counts.items())),
         "needs_llm_review": sum(bool(row["needs_llm_review"]) for row in rows),
+        "efficiency": summarize_efficiency(
+            rows,
+            fields={
+                "action_steps": "agent_action_steps",
+                "prompt_tokens": "prompt_tokens_total",
+                "completion_tokens": "completion_tokens_total",
+                "total_tokens": "total_tokens",
+            },
+        ),
         "duration_available": len(durations),
         "duration_seconds": {
             "min": min(durations) if durations else None,

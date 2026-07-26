@@ -681,3 +681,152 @@ behind explicit switches, while previewing the submission chain by default.
 To inspect artifacts from an existing run, use
 `notebooks/inspect_swesmith_collection.ipynb` and set `RUN_NAME` or `RUN_ROOT`
 if the run is not named `swesmith-pilot`.
+
+## Preference training jobs
+
+After `cluster/setup_rollout_env.sh`, install the optional training stack into
+the project environment with:
+
+```bash
+bash cluster/setup_training_env.sh
+```
+
+`cluster/submit_preference_data.sh` first creates the two immutable training
+datasets exactly once per evaluated trajectory collection:
+
+```text
+build_dmpo_pairs.pbs ─┐
+build_depo_data.pbs  ─┴─> hash-validated immutable preference-data/
+```
+
+The jobs are independent and may overlap. Once both finish, the intended
+training sequence is:
+
+```text
+train DMPO -> package DMPO -> evaluate DMPO
+                         |
+inspect/select DMPO -----┴-> train DEPO -> package DEPO -> evaluate DEPO
+```
+
+Set `EXPERIMENT_ARM=dmpo` or `depo` for either single-method branch. Preview
+the default sequential arm before submission:
+
+```bash
+RUN_NAME=swesmith-pilot-20260719 EXPERIMENT_ARM=dmpo-depo DRY_RUN=1 \
+  cluster/submit_preference_training.sh
+```
+
+The default chain requests:
+
+| Stage | CPUs | GPUs | Host memory | Walltime |
+| --- | ---: | ---: | ---: | ---: |
+| Build DMPO pairs | 2 | 0 | 64 GB | 1 h |
+| Build DEPO data | 2 | 0 | 32 GB | 1 h |
+| Train DMPO | 8 | 1 | 64 GB | 48 h |
+| Package DMPO | 4 | 0 | 64 GB | 4 h |
+| Train DEPO | 8 | 1 | 64 GB | 48 h |
+| Package DEPO | 4 | 0 | 64 GB | 4 h |
+
+The overlapping builders use four CPUs and 96 GB aggregate host
+memory; each training job uses one GPU, eight CPUs, and 64 GB host memory. The
+reservation ceiling is 96 GPU-hours; actual use ends when each job finishes. A
+high-memory GPU is recommended for the 8B model at 32K. If a pilot runs out of
+device memory, reduce `MAX_LENGTH` before requesting more GPUs.
+
+Packaging is CPU-only, so each GPU allocation ends as soon as training
+finishes. By default, each completed package is evaluated on the existing
+500-task SWE-bench Verified evaluation split by reusing the proven
+`cluster/submit_verified_full.sh` workflow. It uses the existing ten-element
+rollout array, one CPU-only evaluation job, and one analysis job; no 50-element
+array is introduced. Each model receives one temperature-0 attempt per task at
+a 32K context. Results are isolated under:
+
+```text
+$DEBUG_DEPO_SCRATCH/runs/<training-run>-dmpo-<dmpo-trial>-evaluation-500/
+$DEBUG_DEPO_SCRATCH/runs/<training-run>-depo-<depo-trial>-evaluation-500/
+$DEBUG_DEPO_SCRATCH/runs/<training-run>-dmpo-<dmpo-trial>-depo-<depo-trial>-evaluation-500/
+```
+
+Override `EVAL_NUM_SHARDS` to use a smaller rollout array; it need not be ten
+as long as it is positive and no larger than the expected task count.
+
+The DMPO evaluation branches from DMPO packaging and may run alongside DEPO
+training; DEPO evaluation starts after DEPO packaging. Set
+`SUBMIT_MODEL_EVALUATIONS=0` to submit training and packaging only. Preview one
+evaluation independently with:
+
+```bash
+PREFERENCE_OBJECTIVE=dmpo \
+TRAIN_RUN_NAME=swesmith-train-5000 \
+DRY_RUN=1 \
+cluster/submit_preference_evaluation.sh
+```
+
+The pair builders select four rollouts per task by default. Selection is
+temperature-balanced and deterministic: with two temperatures it takes two
+rollouts from each (sample slots `0,1,4,5` for the current layout); with four
+temperatures it takes one from each (`0,4,8,12`). Set
+`PREFERENCE_SAMPLE_INDICES=2:3:6:7` for an explicit same-temperature or mixed
+choice, or `PREFERENCE_MAX_ROLLOUTS=0` to use every collected rollout. DMPO and
+DEPO receive the same selection. The submission wrapper also accepts commas
+and converts them to the colon form required inside `qsub -v`.
+
+Collection keeps the paper's 65,536-token context default. Preference training
+and packaged-model evaluation default to 32,768 tokens, so training a 64K
+collection can truncate long trajectories. Training defaults to bf16, PyTorch
+SDPA, gradient checkpointing, one trajectory per device, and gradient
+accumulation of 32 on the one-GPU template. Shared preference defaults live in
+`scripts/preference_defaults.sh`. Checkpoints are written to temporary
+directories and atomically promoted, later-epoch shuffling is deterministic,
+and every epoch ends with a checkpoint. Incomplete checkpoint directories are
+ignored. Completed training and packages are reused; interrupted packages are
+preserved and rebuilt atomically. The final DMPO
+package lives under `$RUN_ROOT/experiments/dmpo/<dmpo-trial>/model`. Direct
+baseline-DEPO packages live under
+`$RUN_ROOT/experiments/depo/<depo-trial>/model`; sequential packages live under
+`$RUN_ROOT/experiments/dmpo-depo/<dmpo-trial>/depo/<depo-trial>/model`.
+These are standalone Hugging Face packages, not adapter-only directories, and
+can be passed directly as `AGENTFORGE_MODEL` to the existing vLLM-backed
+evaluation jobs.
+
+Use `DMPO_TRIAL_NAME` and `DEPO_TRIAL_NAME` to run multiple configurations over
+the same collection. Set `EXPERIMENT_ARM=dmpo`, `depo`, or `dmpo-depo`;
+`dmpo-depo` is the default. Training defaults to
+`PREFERENCE_DATA_MODE=reuse`; run `cluster/submit_preference_data.sh` before
+the first trial. For another sequential DEPO configuration on an existing
+DMPO model, set `DMPO_MODE=reuse`. Each training directory
+contains `trial_config.json`; a changed arm, parent model, hyperparameter, or
+data hash cannot resume into an existing trial name.
+
+The intended comparison is:
+
+```text
+existing baseline result
+baseline SFT -> DMPO
+baseline SFT -> DEPO
+baseline SFT -> DMPO -> DEPO
+```
+
+Train and assess DMPO first:
+
+```bash
+RUN_NAME=swesmith-train-5000 \
+EXPERIMENT_ARM=dmpo \
+DMPO_TRIAL_NAME=gamma07 \
+cluster/submit_preference_training.sh
+```
+
+Then train DEPO from that selected DMPO package:
+
+```bash
+RUN_NAME=swesmith-train-5000 \
+EXPERIMENT_ARM=dmpo-depo \
+DMPO_MODE=reuse \
+DMPO_TRIAL_NAME=gamma07 \
+DEPO_TRIAL_NAME=alpha2 \
+cluster/submit_preference_training.sh
+```
+
+The notebook `notebooks/cluster_preference_training.ipynb` validates the data,
+provides a 64-row/8K/one-epoch pilot on the current collection, and exposes
+separate guarded switches for the one-time data jobs, DMPO, and DEPO.

@@ -12,7 +12,11 @@ from typing import Any
 from debug_depo.preference_data import (
     TOKEN_METRICS,
     TrajectoryRecord,
+    artifact_record,
     load_evaluated_trajectories,
+    parse_sample_indices,
+    select_sample_indices,
+    selected_temperature_counts,
     write_jsonl,
 )
 from debug_depo.utils import write_json
@@ -52,6 +56,8 @@ def build_dmpo_pairs(
     min_cost_ratio: float = 1.1,
     include_failure_efficiency_pairs: bool = False,
     max_pairs_per_task: int = 0,
+    max_rollouts: int = 4,
+    sample_indices: list[int] | None = None,
 ) -> dict[str, Any]:
     if token_metric not in TOKEN_METRICS:
         raise ValueError(f"token_metric must be one of: {', '.join(sorted(TOKEN_METRICS))}")
@@ -60,8 +66,13 @@ def build_dmpo_pairs(
     if max_pairs_per_task < 0:
         raise ValueError("max_pairs_per_task cannot be negative")
 
+    selected_samples = select_sample_indices(
+        run_root,
+        max_rollouts=max_rollouts,
+        sample_indices=sample_indices,
+    )
     grouped: dict[str, list[TrajectoryRecord]] = defaultdict(list)
-    records = load_evaluated_trajectories(run_root)
+    records = load_evaluated_trajectories(run_root, sample_indices=selected_samples)
     for record in records:
         grouped[record.instance_id].append(record)
 
@@ -128,12 +139,25 @@ def build_dmpo_pairs(
         "min_cost_ratio": min_cost_ratio,
         "include_failure_efficiency_pairs": include_failure_efficiency_pairs,
         "max_pairs_per_task": max_pairs_per_task,
+        "max_rollouts": max_rollouts,
+        "selected_sample_indices": selected_samples,
+        "selected_temperature_counts": selected_temperature_counts(
+            run_root, selected_samples
+        ),
         "evaluated_trajectories": len(records),
         "resolved_trajectories": sum(record.resolved for record in records),
         "tasks": len(grouped),
         "tasks_with_pairs": tasks_with_pairs,
         "pairs": count,
         "preference_reason_counts": dict(sorted(reason_counts.items())),
+        "artifacts": {
+            "pairs": artifact_record(
+                output_path,
+                rows=count,
+                summary_path=summary_path,
+            )
+        },
+        "complete": True,
     }
     write_json(summary_path, summary)
     print(json.dumps(summary, indent=2))
@@ -149,6 +173,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-cost-ratio", type=float, default=1.1)
     parser.add_argument("--include-failure-efficiency-pairs", action="store_true")
     parser.add_argument("--max-pairs-per-task", type=int, default=0)
+    parser.add_argument(
+        "--max-rollouts",
+        type=int,
+        default=4,
+        help="Maximum temperature-balanced rollouts per task; use 0 for all.",
+    )
+    parser.add_argument(
+        "--sample-indices",
+        help="Explicit comma-, colon-, or whitespace-separated sample indices.",
+    )
     return parser
 
 
@@ -163,6 +197,10 @@ def main(argv: list[str] | None = None) -> int:
         min_cost_ratio=args.min_cost_ratio,
         include_failure_efficiency_pairs=args.include_failure_efficiency_pairs,
         max_pairs_per_task=args.max_pairs_per_task,
+        max_rollouts=args.max_rollouts,
+        sample_indices=(
+            parse_sample_indices(args.sample_indices) if args.sample_indices else None
+        ),
     )
     return 0
 

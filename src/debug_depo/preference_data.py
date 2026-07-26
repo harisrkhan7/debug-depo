@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import argparse
+import hashlib
 import json
+import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -14,6 +18,7 @@ from debug_depo.swesmith_analyze import (
     _raw_trajectory,
     _safe_json,
 )
+from debug_depo.swesmith_progress import inspect_collection
 
 
 TOKEN_METRICS = frozenset({"total_tokens", "completion_tokens"})
@@ -73,6 +78,104 @@ def discover_sample_indices(run_root: str | Path) -> list[int]:
     if not indices:
         raise FileNotFoundError(f"No SWE-smith sample directories found under {root}")
     return sorted(indices)
+
+
+def parse_sample_indices(spec: str) -> list[int]:
+    """Parse a comma-, colon-, or whitespace-separated sample-index list."""
+
+    values = [value for value in re.split(r"[,:\s]+", spec.strip()) if value]
+    if not values:
+        raise ValueError("at least one sample index is required")
+    indices = [int(value) for value in values]
+    if any(index < 0 for index in indices):
+        raise ValueError("sample indices cannot be negative")
+    if len(indices) != len(set(indices)):
+        raise ValueError("sample indices must be unique")
+    return indices
+
+
+def _collection_layout(run_root: Path) -> tuple[list[float], int] | None:
+    layouts: set[tuple[tuple[float, ...], int]] = set()
+    for path in run_root.glob("collection/shard-*/collection_manifest.json"):
+        try:
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+            temperatures = tuple(float(value) for value in manifest["temperatures"])
+            runs_per_temperature = int(manifest["runs_per_temperature"])
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            continue
+        layouts.add((temperatures, runs_per_temperature))
+    if not layouts:
+        return None
+    if len(layouts) != 1:
+        raise ValueError("Collection shards have incompatible temperature layouts")
+    temperatures, runs_per_temperature = layouts.pop()
+    return list(temperatures), runs_per_temperature
+
+
+def select_sample_indices(
+    run_root: str | Path,
+    *,
+    max_rollouts: int = 4,
+    sample_indices: Iterable[int] | None = None,
+) -> list[int]:
+    """Select explicit samples or a deterministic temperature-balanced subset."""
+
+    if max_rollouts < 0:
+        raise ValueError("max_rollouts cannot be negative")
+    root = Path(run_root)
+    available = discover_sample_indices(root)
+    available_set = set(available)
+    if sample_indices is not None:
+        selected = list(sample_indices)
+        if not selected:
+            raise ValueError("sample_indices cannot be empty")
+        if len(selected) != len(set(selected)):
+            raise ValueError("sample_indices must be unique")
+        missing = sorted(set(selected) - available_set)
+        if missing:
+            raise ValueError(f"Requested sample indices are unavailable: {missing}")
+        return sorted(selected)
+    if max_rollouts == 0 or len(available) <= max_rollouts:
+        return available
+
+    layout = _collection_layout(root)
+    if layout is None:
+        return available[:max_rollouts]
+    temperatures, runs_per_temperature = layout
+    balanced: list[int] = []
+    # Collection sample slots are temperature-major. Iterate run-major here so
+    # each temperature contributes once before a second rollout is selected.
+    for run_index in range(runs_per_temperature):
+        for temperature_index in range(len(temperatures)):
+            sample_index = temperature_index * runs_per_temperature + run_index
+            if sample_index in available_set:
+                balanced.append(sample_index)
+                if len(balanced) == max_rollouts:
+                    return sorted(balanced)
+    # Accommodate incomplete or legacy layouts without silently returning fewer
+    # samples than requested.
+    balanced.extend(index for index in available if index not in set(balanced))
+    return sorted(balanced[:max_rollouts])
+
+
+def selected_temperature_counts(
+    run_root: str | Path,
+    sample_indices: Iterable[int],
+) -> dict[str, int]:
+    """Describe the temperature mix selected from a collection manifest."""
+
+    layout = _collection_layout(Path(run_root))
+    if layout is None:
+        return {}
+    temperatures, runs_per_temperature = layout
+    counts: dict[str, int] = {}
+    for sample_index in sample_indices:
+        temperature_index = sample_index // runs_per_temperature
+        if temperature_index >= len(temperatures):
+            continue
+        key = str(temperatures[temperature_index])
+        counts[key] = counts.get(key, 0) + 1
+    return counts
 
 
 def _clean_messages(raw: dict[str, Any]) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
@@ -137,12 +240,72 @@ def _usage(raw: dict[str, Any]) -> tuple[int, int, int] | None:
     return prompt, completion, total
 
 
-def load_evaluated_trajectories(run_root: str | Path) -> list[TrajectoryRecord]:
-    """Load complete, scored SWE-smith rollouts directly from run artifacts."""
+def _expected_trajectory_keys(
+    run_root: Path,
+    sample_indices: list[int],
+) -> set[tuple[int, str]]:
+    """Return the exact selected sample/task matrix declared by the manifests."""
+
+    try:
+        progress = inspect_collection(run_root)
+    except (FileNotFoundError, ValueError) as exc:
+        raise ValueError(
+            "Preference data requires readable, complete collection manifests"
+        ) from exc
+
+    problems = list(progress.warnings)
+    if len(progress.expected_task_ids) != progress.expected_tasks:
+        problems.append(
+            "collection manifests declare "
+            f"{len(progress.expected_task_ids)} unique task IDs for "
+            f"{progress.expected_tasks} expected tasks"
+        )
+    missing_shards = [
+        f"shard-{shard.index}"
+        for shard in progress.shards
+        if not shard.manifest_present
+    ]
+    if missing_shards:
+        problems.append(f"missing collection manifests: {', '.join(missing_shards)}")
+    out_of_range = [
+        sample_index
+        for sample_index in sample_indices
+        if sample_index >= progress.samples_per_task
+    ]
+    if out_of_range:
+        problems.append(
+            "selected sample indices exceed the manifest layout: "
+            + ", ".join(map(str, out_of_range))
+        )
+    if problems:
+        raise ValueError(
+            "Preference data requires a consistent collection manifest: "
+            + "; ".join(problems)
+        )
+
+    return {
+        (sample_index, instance_id)
+        for sample_index in sample_indices
+        for instance_id in progress.expected_task_ids
+    }
+
+
+def load_evaluated_trajectories(
+    run_root: str | Path,
+    *,
+    sample_indices: Iterable[int] | None = None,
+) -> list[TrajectoryRecord]:
+    """Load an exact matrix of complete, scored SWE-smith rollout artifacts."""
 
     root = Path(run_root)
     records: list[TrajectoryRecord] = []
-    for sample_index in discover_sample_indices(root):
+    selected = (
+        discover_sample_indices(root)
+        if sample_indices is None
+        else select_sample_indices(root, sample_indices=sample_indices)
+    )
+    expected_keys = _expected_trajectory_keys(root, selected)
+    for sample_index in selected:
         evaluations = _evaluation_index(root, sample_index)
         pattern = (
             f"collection/shard-*/samples/sample-{sample_index}/"
@@ -188,21 +351,134 @@ def load_evaluated_trajectories(run_root: str | Path) -> list[TrajectoryRecord]:
                 )
             )
     records.sort(key=lambda item: (item.instance_id, item.sample_index))
-    if not records:
+    actual_keys = [(record.sample_index, record.instance_id) for record in records]
+    actual_key_set = set(actual_keys)
+    key_counts: dict[tuple[int, str], int] = {}
+    for key in actual_keys:
+        key_counts[key] = key_counts.get(key, 0) + 1
+    missing = sorted(expected_keys - actual_key_set)
+    unexpected = sorted(actual_key_set - expected_keys)
+    duplicates = sorted(key for key, count in key_counts.items() if count != 1)
+    if missing or unexpected or duplicates:
+        details = []
+        if missing:
+            details.append(
+                f"{len(missing)} missing/unusable (examples: {missing[:3]})"
+            )
+        if unexpected:
+            details.append(f"{len(unexpected)} unexpected (examples: {unexpected[:3]})")
+        if duplicates:
+            details.append(f"{len(duplicates)} duplicated (examples: {duplicates[:3]})")
         raise ValueError(
-            f"No evaluated trajectories with complete per-call token usage found under {root}"
+            "Preference data requires complete evaluated trajectories for every "
+            "selected task/sample slot; " + "; ".join(details)
         )
     return records
 
 
 def write_jsonl(path: str | Path, rows: Iterable[dict[str, Any]]) -> int:
-    """Write rows as JSONL and return their count."""
+    """Atomically write rows as JSONL and return their count."""
 
     output = Path(path)
     output.parent.mkdir(parents=True, exist_ok=True)
     count = 0
-    with output.open("w", encoding="utf-8") as handle:
-        for row in rows:
-            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
-            count += 1
+    temporary = output.parent / f".{output.name}.{os.getpid()}.tmp"
+    try:
+        with temporary.open("w", encoding="utf-8") as handle:
+            for row in rows:
+                handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+                count += 1
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, output)
+    finally:
+        temporary.unlink(missing_ok=True)
     return count
+
+
+def file_sha256(path: str | Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def artifact_record(path: str | Path, *, rows: int, summary_path: str | Path) -> dict[str, Any]:
+    artifact = Path(path).resolve()
+    summary_parent = Path(summary_path).resolve().parent
+    return {
+        "path": os.path.relpath(artifact, summary_parent),
+        "rows": rows,
+        "sha256": file_sha256(artifact),
+    }
+
+
+def validate_preference_artifacts(
+    objective: str,
+    data_dir: str | Path,
+) -> dict[str, Any]:
+    """Require a completed preference-data manifest and matching immutable files."""
+
+    directory = Path(data_dir).expanduser().resolve()
+    summary_path = directory / "summary.json"
+    try:
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ValueError(f"Preference-data summary is missing: {summary_path}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Preference-data summary is invalid: {summary_path}") from exc
+    if not isinstance(summary, dict) or summary.get("objective") != objective:
+        raise ValueError(f"Preference-data summary has the wrong objective: {summary_path}")
+    if summary.get("complete") is not True:
+        raise ValueError(
+            f"Preference-data build is not marked complete: {summary_path}. "
+            "Run cluster/submit_preference_data.sh once."
+        )
+    artifacts = summary.get("artifacts")
+    if not isinstance(artifacts, dict) or not artifacts:
+        raise ValueError(f"Preference-data artifact manifest is missing: {summary_path}")
+    for name, record in artifacts.items():
+        if not isinstance(record, dict):
+            raise ValueError(f"Invalid artifact record {name!r}: {summary_path}")
+        relative_path = record.get("path")
+        expected_hash = record.get("sha256")
+        expected_rows = record.get("rows")
+        if not isinstance(relative_path, str) or not isinstance(expected_hash, str):
+            raise ValueError(f"Incomplete artifact record {name!r}: {summary_path}")
+        artifact_path = (directory / relative_path).resolve()
+        if not artifact_path.is_file():
+            raise ValueError(f"Preference-data artifact is missing: {artifact_path}")
+        if file_sha256(artifact_path) != expected_hash:
+            raise ValueError(f"Preference-data artifact hash mismatch: {artifact_path}")
+        with artifact_path.open(encoding="utf-8") as handle:
+            actual_rows = sum(bool(line.strip()) for line in handle)
+        if actual_rows != expected_rows:
+            raise ValueError(
+                f"Preference-data artifact row count mismatch: {artifact_path} "
+                f"({actual_rows} != {expected_rows})"
+            )
+    return summary
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Validate immutable preference-data artifacts.")
+    parser.add_argument("--objective", choices=("dmpo", "depo"), required=True)
+    parser.add_argument("--data-dir", required=True)
+    args = parser.parse_args(argv)
+    summary = validate_preference_artifacts(args.objective, args.data_dir)
+    print(
+        json.dumps(
+            {
+                "objective": args.objective,
+                "data_dir": str(Path(args.data_dir).resolve()),
+                "artifacts": summary["artifacts"],
+            },
+            indent=2,
+        )
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

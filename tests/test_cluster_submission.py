@@ -8,6 +8,9 @@ ROOT = Path(__file__).resolve().parents[1]
 RUN_SETTING_NAMES = {
     "AGENTFORGE_MODEL",
     "AFTEROK_JOB_ID",
+    "ALPHA_STEPS",
+    "ALPHA_TOKENS",
+    "BASE_MODEL",
     "BASE_SEED",
     "CACHE_BUILD_DATASETS",
     "CACHE_BUILD_MAX_WORKERS",
@@ -17,17 +20,35 @@ RUN_SETTING_NAMES = {
     "CONTEXT_LENGTH",
     "DATASET",
     "DEPO_OUTPUT_DIR",
+    "DEPO_MODEL_DIR",
+    "DEPO_BETA",
+    "DEPO_LEARNING_RATE",
+    "DEPO_TOKEN_METRIC",
+    "DEPO_TRAIN_OUTPUT_DIR",
+    "DEPO_TRIAL_NAME",
+    "DEPO_TRIAL_ROOT",
     "DEBUG_DEPO_SCRATCH",
     "DMPO_OUTPUT_DIR",
+    "DMPO_MODEL_DIR",
+    "DMPO_BETA",
+    "DMPO_GAMMA",
+    "DMPO_LEARNING_RATE",
+    "DMPO_TRAIN_OUTPUT_DIR",
+    "DMPO_TRIAL_NAME",
+    "DMPO_TRIAL_ROOT",
+    "DMPO_MODE",
     "DRY_RUN",
     "EVAL_MAX_WORKERS",
     "EVAL_TIMEOUT",
+    "EXPERIMENT_ARM",
     "EXPECTED_TASKS",
     "EXPECTED_COUNT",
     "EXPECTED_SWEBENCH_TASKS",
     "HARNESS",
     "LIMIT",
     "MAX_STEPS",
+    "MAX_LENGTH",
+    "MAX_TRAIN_ROWS",
     "MAX_PAIRS_PER_TASK",
     "MIN_COST_RATIO",
     "MINI_SWE_ENVIRONMENT_CLASS",
@@ -35,6 +56,36 @@ RUN_SETTING_NAMES = {
     "MINI_SWE_MODEL",
     "MINI_SWE_RUNNER",
     "NUM_SHARDS",
+    "NUM_PROCESSES",
+    "PACKAGE_MODEL",
+    "PER_DEVICE_BATCH_SIZE",
+    "PREFERENCE_OBJECTIVE",
+    "PREFERENCE_MAX_ROLLOUTS",
+    "PREFERENCE_DATA_MODE",
+    "PREFERENCE_SAMPLE_INDICES",
+    "REBUILD_PREFERENCE_DATA",
+    "TRAIN_MEMORY",
+    "TRAIN_NCPUS",
+    "TRAIN_RUN_NAME",
+    "TRAIN_RUN_ROOT",
+    "MODEL_PATH",
+    "EVAL_RUN_NAME",
+    "EVAL_NUM_SHARDS",
+    "EVAL_ROLLOUT_WORKERS",
+    "EVAL_CONTEXT_LENGTH",
+    "EVAL_EXPECTED_TASKS",
+    "EVAL_TEMPERATURE",
+    "EVAL_TASK_IDS_FILE",
+    "COLLECTION_STAGE_LABEL",
+    "EVALUATION_STAGE_LABEL",
+    "ANALYSIS_STAGE_LABEL",
+    "SUBMIT_MODEL_EVALUATIONS",
+    "SUBMIT_DMPO_EVALUATION",
+    "DMPO_EVAL_RUN_NAME",
+    "DEPO_EVAL_RUN_NAME",
+    "GRADIENT_ACCUMULATION_STEPS",
+    "EPOCHS",
+    "SAVE_STEPS",
     "OVERWRITE",
     "ROLLOUT_WORKERS",
     "RUN_ID",
@@ -62,6 +113,7 @@ RUN_SETTING_NAMES = {
     "TEMPERATURE",
     "TEMPERATURES",
     "TOKEN_METRIC",
+    "MODEL_NAME_OR_PATH",
     "TOTAL_SAMPLES",
     "TIMEOUT_SECONDS",
     "TOP_P",
@@ -114,6 +166,7 @@ def test_verified_full_submission_preserves_evaluation_defaults():
     assert "SPLIT=test" in collection
     assert "NUM_SHARDS=10" in collection
     assert "ROLLOUT_WORKERS=6" in collection
+    assert "CONTEXT_LENGTH=65536" in collection
     assert "TIMEOUT_SECONDS=21600" in collection
     assert "TEMPERATURE=0.0" in collection
     assert "RUN_ID=agentforge_verified_full" in evaluation
@@ -265,7 +318,7 @@ def test_swesmith_pilot_is_small_by_default():
     assert "#PBS -J 0-2" in pilot_pbs
 
 
-def test_preference_data_submission_orders_dmpo_before_depo():
+def test_preference_data_submission_runs_two_one_time_builders_in_parallel():
     output = dry_run(
         "cluster/submit_preference_data.sh",
         RUN_NAME="swesmith-pilot-20260719",
@@ -275,8 +328,10 @@ def test_preference_data_submission_orders_dmpo_before_depo():
     assert "TOKEN_METRIC=total_tokens" in output
     assert "MIN_COST_RATIO=1.1" in output
     assert "cluster/pbs/build_dmpo_pairs.pbs" in output
-    assert "depend=afterok:<dmpo-job-id>" in output
     assert "cluster/pbs/build_depo_data.pbs" in output
+    assert "run independently and may overlap" in output
+    assert "REBUILD_PREFERENCE_DATA=0" in output
+    assert "depend=afterok:<dmpo-job-id>" not in output
 
 
 def test_swesmith_pilot_with_cache_is_one_dependency_chain():
@@ -671,3 +726,260 @@ def test_cluster_sync_excludes_the_complete_scratch_directory():
 
     assert '--exclude "scratch/"' in sync_script
     assert '--exclude "scratch/*"' not in sync_script
+
+
+def test_preference_training_dry_run_chains_data_training_packages_and_evaluation():
+    output = dry_run(
+        "cluster/submit_preference_training.sh",
+        RUN_NAME="preference-pilot",
+        PREFERENCE_DATA_MODE="build",
+    )
+
+    assert "1. DMPO data:" in output
+    assert "2. DEPO data:" in output
+    assert "3. DMPO train:" in output
+    assert "4. DMPO package:" in output
+    assert "5. DEPO train:" in output
+    assert "6. DEPO package:" in output
+    assert "Experiment arm: dmpo-depo" in output
+    assert "2. DEPO data: qsub -v" in output
+    assert "depend=afterok:<data-jobs>" in output
+    assert "depend=afterok:<dmpo-train>" in output
+    assert "depend=afterok:<parent-and-data>" in output
+    assert "depend=afterok:<depo-train>" in output
+    assert "MODEL_NAME_OR_PATH=Kwai-Klear/Klear-AgentForge-8B-SFT" in output
+    assert "LEARNING_RATE=1e-6" in output
+    assert "LEARNING_RATE=2e-5" in output
+    assert "ALPHA_TOKENS=2.0" in output
+    assert "PACKAGE_MODEL=0" in output
+    assert "DMPO trial: default" in output
+    assert "DEPO trial: default" in output
+    assert "preference-pilot-dmpo-default-evaluation-500" in output
+    assert "preference-pilot-dmpo-default-depo-default-evaluation-500" in output
+    assert "existing SWE-bench Verified 500-task evaluation split" in output
+    assert "experiments/dmpo/default/model" in output
+    assert "experiments/dmpo-depo/default/depo/default/model" in output
+
+
+def test_preference_trial_names_isolate_outputs_and_can_reuse_data():
+    output = dry_run(
+        "cluster/submit_preference_training.sh",
+        RUN_NAME="preference-pilot",
+        DMPO_TRIAL_NAME="gamma09",
+        DEPO_TRIAL_NAME="alpha1",
+        PREFERENCE_DATA_MODE="reuse",
+        DMPO_MODE="reuse",
+    )
+
+    assert "Preference data mode: reuse" in output
+    assert "reuse existing DMPO and DEPO files" in output
+    assert "experiments/dmpo/gamma09/training" in output
+    assert "experiments/dmpo/gamma09/model" in output
+    assert "experiments/dmpo-depo/gamma09/depo/alpha1/training" in output
+    assert "experiments/dmpo-depo/gamma09/depo/alpha1/model" in output
+    assert "preference-pilot-dmpo-gamma09-evaluation-500" in output
+    assert "preference-pilot-dmpo-gamma09-depo-alpha1-evaluation-500" in output
+    assert "DMPO train/package: reuse" in output
+
+
+def test_dmpo_arm_only_builds_trains_and_evaluates_dmpo():
+    output = dry_run(
+        "cluster/submit_preference_training.sh",
+        RUN_NAME="preference-pilot",
+        EXPERIMENT_ARM="dmpo",
+        DMPO_TRIAL_NAME="gamma07",
+        PREFERENCE_DATA_MODE="build",
+    )
+
+    assert "Model lineage: Kwai-Klear/Klear-AgentForge-8B-SFT -> DMPO" in output
+    assert "DMPO data:" in output
+    assert "DMPO train:" in output
+    assert "DMPO package:" in output
+    assert "preference-pilot-dmpo-gamma07-evaluation-500" in output
+    assert "DEPO data:" not in output
+    assert "DEPO train:" not in output
+    assert "DEPO package:" not in output
+    assert "DEPO: not part of this arm" in output
+
+
+def test_preference_training_defaults_to_reusing_one_time_data():
+    output = dry_run(
+        "cluster/submit_preference_training.sh",
+        RUN_NAME="preference-pilot",
+        EXPERIMENT_ARM="dmpo",
+        DMPO_TRIAL_NAME="pilot-dmpo",
+        MAX_TRAIN_ROWS="64",
+        MAX_LENGTH="8192",
+        EPOCHS="1",
+    )
+
+    assert "Preference data mode: reuse" in output
+    assert "reuse existing DMPO files" in output
+    assert "DMPO data:" not in output
+    assert "MAX_TRAIN_ROWS=64" in output
+    assert "MAX_LENGTH=8192" in output
+    assert "Training resources: 1 node, 8 CPUs, 1 GPUs, 64gb memory" in output
+
+
+def test_depo_arm_uses_baseline_parent_and_separate_output_root():
+    output = dry_run(
+        "cluster/submit_preference_training.sh",
+        RUN_NAME="preference-pilot",
+        EXPERIMENT_ARM="depo",
+        DEPO_TRIAL_NAME="alpha2",
+    )
+
+    assert "Model lineage: Kwai-Klear/Klear-AgentForge-8B-SFT -> DEPO" in output
+    assert "MODEL_NAME_OR_PATH=Kwai-Klear/Klear-AgentForge-8B-SFT" in output
+    assert "BASE_MODEL=Kwai-Klear/Klear-AgentForge-8B-SFT" in output
+    assert "experiments/depo/alpha2/training" in output
+    assert "experiments/depo/alpha2/model" in output
+    assert "preference-pilot-depo-alpha2-evaluation-500" in output
+    assert "DMPO data:" not in output
+    assert "DMPO train:" not in output
+    assert "DMPO package:" not in output
+
+
+def test_sequential_arm_can_reuse_dmpo_for_another_depo_trial():
+    output = dry_run(
+        "cluster/submit_preference_training.sh",
+        RUN_NAME="preference-pilot",
+        EXPERIMENT_ARM="dmpo-depo",
+        DMPO_TRIAL_NAME="gamma07",
+        DEPO_TRIAL_NAME="alpha4",
+        PREFERENCE_DATA_MODE="reuse",
+        DMPO_MODE="reuse",
+    )
+
+    assert "DMPO train/package: reuse" in output
+    assert "MODEL_NAME_OR_PATH=" in output
+    assert "experiments/dmpo/gamma07/model" in output
+    assert "experiments/dmpo-depo/gamma07/depo/alpha4/model" in output
+    assert (
+        "DMPO: preference-pilot-dmpo-gamma07-evaluation-500 (enabled: 0)"
+        in output
+    )
+
+
+def test_preference_submission_rejects_unknown_experiment_arm():
+    env = os.environ.copy()
+    for name in RUN_SETTING_NAMES:
+        env.pop(name, None)
+    env.update({"DRY_RUN": "1", "EXPERIMENT_ARM": "unknown"})
+
+    completed = subprocess.run(
+        ["bash", "cluster/submit_preference_training.sh"],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 2
+    assert "EXPERIMENT_ARM must be dmpo, depo, or dmpo-depo." in completed.stderr
+
+
+def test_preference_training_scripts_package_standalone_models():
+    shared = (ROOT / "scripts/train_preference.sh").read_text(encoding="utf-8")
+    dmpo = (ROOT / "scripts/train_dmpo.sh").read_text(encoding="utf-8")
+    depo = (ROOT / "scripts/train_depo.sh").read_text(encoding="utf-8")
+    train_pbs = (ROOT / "cluster/pbs/train_preference.pbs").read_text(encoding="utf-8")
+
+    assert "accelerate_args=(launch" in shared
+    assert "accelerate_args+=(--multi_gpu)" in shared
+    assert 'PACKAGE_MODEL:-1' in shared
+    assert "debug-depo-package-model" in shared
+    assert "package_manifest.json" in shared
+    assert "PREFERENCE_OBJECTIVE=dmpo" in dmpo
+    assert "PREFERENCE_OBJECTIVE=depo" in depo
+    assert "scripts/train_preference.sh" in dmpo
+    assert "scripts/train_preference.sh" in depo
+    assert "select=1:ncpus=8:ngpus=1:mem=64gb" in train_pbs
+    assert "walltime=48:00:00" in train_pbs
+    assert 'PACKAGE_MODEL="${PACKAGE_MODEL:-0}"' in train_pbs
+
+    package_script = (ROOT / "scripts/package_preference_model.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "debug-depo-package-model" in package_script
+    package_pbs = (ROOT / "cluster/pbs/package_preference.pbs").read_text(
+        encoding="utf-8"
+    )
+    assert "select=1:ncpus=4:mem=64gb" in package_pbs
+    assert "walltime=04:00:00" in package_pbs
+
+
+def test_training_setup_preserves_rollout_dependencies():
+    setup = (ROOT / "cluster/setup_training_env.sh").read_text(encoding="utf-8")
+
+    assert '"$UV_BIN" sync --extra dev --extra training' not in setup
+    assert '"$UV_BIN" sync --inexact' in setup
+    assert "--extra swebench" in setup
+    assert "minisweagent" in setup
+
+
+def test_preference_notebook_is_guarded_and_runs_dmpo_before_sequential_depo():
+    notebook = json.loads(
+        (ROOT / "notebooks/cluster_preference_training.ipynb").read_text(
+            encoding="utf-8"
+        )
+    )
+    source = "\n".join(
+        "".join(cell.get("source", [])) for cell in notebook["cells"]
+    )
+
+    assert "swesmith-pilot-20260719" in source
+    assert "MAX_TRAIN_ROWS = os.getenv('MAX_TRAIN_ROWS', '64')" in source
+    assert "MAX_LENGTH = os.getenv('TRAIN_MAX_LENGTH', '8192')" in source
+    assert "SUBMIT_DATA_JOBS = False" in source
+    assert "SUBMIT_DMPO = False" in source
+    assert "SUBMIT_DEPO = False" in source
+    assert "cluster/submit_preference_data.sh" in source
+    assert "'EXPERIMENT_ARM': 'dmpo'" in source
+    assert "'EXPERIMENT_ARM': 'dmpo-depo'" in source
+    assert "'DMPO_MODE': 'reuse'" in source
+    assert "swebench_verified_pilot_5_instance_ids.txt" in source
+
+
+def test_preference_evaluation_reuses_working_500_task_verified_pipeline():
+    output = dry_run(
+        "cluster/submit_preference_evaluation.sh",
+        PREFERENCE_OBJECTIVE="dmpo",
+        TRAIN_RUN_NAME="preference-pilot",
+        TRAIN_RUN_ROOT=str(ROOT / "scratch/runs/preference-pilot"),
+        AFTEROK_JOB_ID="123.cluster",
+    )
+
+    rollouts = job_section(output, "DMPO rollout generation job")
+    evaluation = job_section(output, "DMPO evaluation job")
+    analysis = job_section(output, "DMPO analysis job")
+    assert "PBS script: cluster/pbs/collect_verified_full.pbs" in rollouts
+    assert "dependency: successful job 123.cluster" in rollouts
+    assert "RUN_NAME=preference-pilot-dmpo-default-evaluation-500" in rollouts
+    assert "DATASET=princeton-nlp/SWE-bench_Verified" in rollouts
+    assert "NUM_SHARDS=10" in rollouts
+    assert "TEMPERATURE=0.0" in rollouts
+    assert "ROLLOUT_WORKERS=6" in rollouts
+    assert "CONTEXT_LENGTH=32768" in rollouts
+    assert "experiments/dmpo/default/model" in rollouts
+    assert "PBS script: cluster/pbs/evaluate_verified_full.pbs" in evaluation
+    assert "EXPECTED_COUNT=500" in evaluation
+    assert "PBS script: cluster/pbs/analyze_verified.pbs" in analysis
+
+
+def test_direct_depo_evaluation_has_distinct_model_and_run_paths():
+    output = dry_run(
+        "cluster/submit_preference_evaluation.sh",
+        PREFERENCE_OBJECTIVE="depo",
+        EXPERIMENT_ARM="depo",
+        DEPO_TRIAL_NAME="alpha2",
+        TRAIN_RUN_NAME="preference-pilot",
+        TRAIN_RUN_ROOT=str(ROOT / "scratch/runs/preference-pilot"),
+        AFTEROK_JOB_ID="456.cluster",
+    )
+
+    rollouts = job_section(output, "DEPO rollout generation job")
+    assert "RUN_NAME=preference-pilot-depo-alpha2-evaluation-500" in rollouts
+    assert "experiments/depo/alpha2/model" in rollouts
+    assert "experiments/dmpo-depo" not in rollouts

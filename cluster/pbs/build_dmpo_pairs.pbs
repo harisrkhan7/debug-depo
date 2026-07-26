@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #PBS -N build-dmpo-pairs
-#PBS -l select=1:ncpus=2:mem=16gb
+#PBS -l select=1:ncpus=2:mem=64gb
 #PBS -l walltime=01:00:00
 # Output and error paths are supplied by the submission wrapper.
 

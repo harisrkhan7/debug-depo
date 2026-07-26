@@ -113,6 +113,11 @@ def test_analyze_run_writes_one_row_per_prediction_and_classifies_failures(tmp_p
     assert summary["instances"] == 2
     assert summary["rollouts_with_patch"] == 1
     assert summary["evaluations_resolved"] == 0
+    assert summary["efficiency"]["trajectories"] == 2
+    assert summary["efficiency"]["resolution_rate"] == 0
+    assert summary["efficiency"]["all"]["total_tokens"]["available"] == 1
+    assert summary["efficiency"]["all"]["total_tokens"]["median"] == 12
+    assert summary["efficiency"]["total_tokens_per_resolved_task"] is None
     assert rows[0]["repo"] == "repo/project"
     assert rows[0]["evaluation_status"] == "unresolved"
     assert rows[0]["trajectory_steps"] == "2"

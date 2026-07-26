@@ -10,7 +10,11 @@ from typing import Any
 
 from debug_depo.preference_data import (
     TrajectoryRecord,
+    artifact_record,
     load_evaluated_trajectories,
+    parse_sample_indices,
+    select_sample_indices,
+    selected_temperature_counts,
     write_jsonl,
 )
 from debug_depo.utils import write_json
@@ -49,14 +53,21 @@ def build_depo_data(
     desirable_output: str | Path,
     undesirable_output: str | Path,
     summary_path: str | Path,
+    max_rollouts: int = 4,
+    sample_indices: list[int] | None = None,
 ) -> dict[str, Any]:
-    records = load_evaluated_trajectories(run_root)
+    selected_samples = select_sample_indices(
+        run_root,
+        max_rollouts=max_rollouts,
+        sample_indices=sample_indices,
+    )
+    records = load_evaluated_trajectories(run_root, sample_indices=selected_samples)
     rows = [_row(record) for record in records]
     desirable = [row for row in rows if row["label"] == "desirable"]
     undesirable = [row for row in rows if row["label"] == "undesirable"]
-    write_jsonl(output_path, rows)
-    write_jsonl(desirable_output, desirable)
-    write_jsonl(undesirable_output, undesirable)
+    row_count = write_jsonl(output_path, rows)
+    desirable_count = write_jsonl(desirable_output, desirable)
+    undesirable_count = write_jsonl(undesirable_output, undesirable)
     status_counts = Counter(record.evaluation_status for record in records)
     summary = {
         "schema_version": 1,
@@ -66,6 +77,11 @@ def build_depo_data(
         "output_path": str(output_path),
         "desirable_output": str(desirable_output),
         "undesirable_output": str(undesirable_output),
+        "max_rollouts": max_rollouts,
+        "selected_sample_indices": selected_samples,
+        "selected_temperature_counts": selected_temperature_counts(
+            run_root, selected_samples
+        ),
         "trajectories": len(rows),
         "desirable": len(desirable),
         "undesirable": len(undesirable),
@@ -76,6 +92,24 @@ def build_depo_data(
             "to optimize billed debugging cost, or inverse_completion_tokens_per_step "
             "to reproduce the paper's generated-token definition."
         ),
+        "artifacts": {
+            "trajectories": artifact_record(
+                output_path,
+                rows=row_count,
+                summary_path=summary_path,
+            ),
+            "desirable": artifact_record(
+                desirable_output,
+                rows=desirable_count,
+                summary_path=summary_path,
+            ),
+            "undesirable": artifact_record(
+                undesirable_output,
+                rows=undesirable_count,
+                summary_path=summary_path,
+            ),
+        },
+        "complete": True,
     }
     write_json(summary_path, summary)
     print(json.dumps(summary, indent=2))
@@ -89,6 +123,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--desirable-output")
     parser.add_argument("--undesirable-output")
     parser.add_argument("--summary-output")
+    parser.add_argument(
+        "--max-rollouts",
+        type=int,
+        default=4,
+        help="Maximum temperature-balanced rollouts per task; use 0 for all.",
+    )
+    parser.add_argument(
+        "--sample-indices",
+        help="Explicit comma-, colon-, or whitespace-separated sample indices.",
+    )
     return parser
 
 
@@ -101,6 +145,10 @@ def main(argv: list[str] | None = None) -> int:
         desirable_output=args.desirable_output or output_dir / "desirable.jsonl",
         undesirable_output=args.undesirable_output or output_dir / "undesirable.jsonl",
         summary_path=args.summary_output or output_dir / "summary.json",
+        max_rollouts=args.max_rollouts,
+        sample_indices=(
+            parse_sample_indices(args.sample_indices) if args.sample_indices else None
+        ),
     )
     return 0
 

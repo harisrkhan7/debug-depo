@@ -68,6 +68,6 @@ if ((root_total_gib < 1000)); then
 WARNING: the persistent filesystem is only about ${root_total_gib} GiB.
 Attach a sufficiently large Shared Storage Volume at
 $HYPERSTACK_PERSISTENT_ROOT before generating runs, checkpoints, and models.
-Rebuildable caches and SIFs remain on the ephemeral disk.
+Rebuildable caches and task SIFs remain on the ephemeral disk.
 MSG
 fi

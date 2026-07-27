@@ -14,7 +14,7 @@ case "$ACTION" in
     ;;
 esac
 
-RUN_NAME="${RUN_NAME:-swesmith-train-5000}"
+RUN_NAME="${RUN_NAME:-swesmith-train-1000}"
 require_run_name "$RUN_NAME"
 RUN_ROOT="${RUN_ROOT:-$DEBUG_DEPO_SCRATCH/runs/$RUN_NAME}"
 export RUN_NAME RUN_ROOT

@@ -20,7 +20,10 @@ case "$FAMILY" in
     ;;
   swesmith)
     export RUN_NAME="${RUN_NAME:-swesmith-hyperstack-smoke}"
-    export TASK_IDS_FILE="${TASK_IDS_FILE:-data/splits/swesmith_train_5000_instance_ids.txt}"
+    export TASK_IDS_FILE="${TASK_IDS_FILE:-data/splits/swesmith_train_1000_instance_ids.txt}"
+    # Collection limits this larger candidate list to EXPECTED_TASKS. Evaluation
+    # must therefore use the merged prediction IDs, not require every candidate.
+    export EVALUATION_TASK_IDS_FILE="${EVALUATION_TASK_IDS_FILE-}"
     # One run at each temperature exercises multi-sample collection, merging,
     # evaluation, and analysis with 16 trajectories instead of 64.
     export RUNS_PER_TEMPERATURE="${RUNS_PER_TEMPERATURE:-1}"

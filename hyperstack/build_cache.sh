@@ -15,21 +15,23 @@ case "$MODE" in
 esac
 
 require_positive_integer CACHE_BUILD_MAX_WORKERS "$CACHE_BUILD_MAX_WORKERS"
-if ((CACHE_BUILD_MAX_WORKERS < 50 || CACHE_BUILD_MAX_WORKERS > 100)); then
-  echo "CACHE_BUILD_MAX_WORKERS must be between 50 and 100; got $CACHE_BUILD_MAX_WORKERS." >&2
+if ((CACHE_BUILD_MAX_WORKERS > 100)); then
+  echo "CACHE_BUILD_MAX_WORKERS must be at most 100; got $CACHE_BUILD_MAX_WORKERS." >&2
   exit 2
 fi
 
 # Apptainer converts each OCI image to SIF with mksquashfs. Unless constrained,
 # every concurrent mksquashfs process may use all processors visible to the VM;
 # Linux schedules those threads but does not divide the 192 H200-host vCPUs
-# evenly between cache workers. The default 75-worker configuration caps
-# compression at two processors per pull, leaving CPU capacity for extraction,
-# filesystem I/O, the controller, and the operating system. Override the cap
-# only after measuring:
+# evenly between cache workers. All pulls in one dataset family also share an
+# OCI metadata/cache directory. High process concurrency can corrupt transient
+# OCI JSON there, producing "unexpected end of JSON input" or "invalid character
+# '{' after top-level value". Parallel cache builds therefore disable that
+# intermediate cache by default. The 50-worker default caps compression at two
+# processors per pull, leaving capacity for extraction and the operating system:
 #
-#   CACHE_BUILD_MAX_WORKERS=75 \
-#   APPTAINER_MKSQUASHFS_ARGS='-processors 1' \
+#   CACHE_BUILD_MAX_WORKERS=50 \
+#   APPTAINER_MKSQUASHFS_ARGS='-processors 2' \
 #     bash hyperstack/run.sh build-cache full
 #
 # Omitting the processor cap may still complete, because pulls spend time
@@ -44,6 +46,7 @@ export CACHE_BUILD_MODE="$MODE"
 export CACHE_BUILD_DATASETS="${CACHE_BUILD_DATASETS:-both}"
 export CACHE_BUILD_MAX_WORKERS
 export SWESMITH_TASK_IDS_FILE
+export APPTAINER_DISABLE_CACHE="${APPTAINER_DISABLE_CACHE:-1}"
 export CACHE_BUILD_SUMMARY_OUTPUT="${CACHE_BUILD_SUMMARY_OUTPUT:-$summary_dir/$MODE-$timestamp.json}"
 
 cat <<MSG
@@ -52,6 +55,7 @@ HyperStack ephemeral Apptainer cache build
   datasets:          $CACHE_BUILD_DATASETS
   workers:           $CACHE_BUILD_MAX_WORKERS
   squashfs args:     $APPTAINER_MKSQUASHFS_ARGS
+  disable OCI cache: $APPTAINER_DISABLE_CACHE
   ephemeral root:    $HYPERSTACK_EPHEMERAL_ROOT
   SWE-bench SIFs:    $SWEBENCH_APPTAINER_SIF_DIR
   SWE-smith SIFs:    $SWESMITH_APPTAINER_SIF_DIR

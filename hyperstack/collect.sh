@@ -15,11 +15,11 @@ case "$FAMILY" in
     TASK_IDS_FILE="${TASK_IDS_FILE:-}"
     ;;
   swesmith)
-    RUN_NAME="${RUN_NAME:-swesmith-train-5000}"
-    EXPECTED_TASKS="${EXPECTED_TASKS:-5000}"
+    RUN_NAME="${RUN_NAME:-swesmith-train-1000}"
+    EXPECTED_TASKS="${EXPECTED_TASKS:-1000}"
     DATASET="${DATASET:-SWE-bench/SWE-smith-py}"
     SPLIT="${SPLIT:-train}"
-    TASK_IDS_FILE="${TASK_IDS_FILE:-data/splits/swesmith_train_5000_instance_ids.txt}"
+    TASK_IDS_FILE="${TASK_IDS_FILE:-data/splits/swesmith_train_1000_instance_ids.txt}"
     ;;
   *)
     echo "Usage: bash hyperstack/collect.sh verified|swesmith" >&2
@@ -151,10 +151,11 @@ run_shard() {
   local vllm_pid=$!
 
   stop_vllm() {
-    kill "$vllm_pid" 2>/dev/null || true
-    wait "$vllm_pid" 2>/dev/null || true
+    local process_id="$1"
+    kill "$process_id" 2>/dev/null || true
+    wait "$process_id" 2>/dev/null || true
   }
-  trap stop_vllm EXIT HUP INT TERM
+  trap "stop_vllm $vllm_pid" EXIT HUP INT TERM
 
   local llm_base_url="http://127.0.0.1:$port/v1"
   wait_for_vllm "$llm_base_url" "$vllm_pid" "$vllm_log"

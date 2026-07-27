@@ -69,7 +69,7 @@ Actions:
   smoke verified|swesmith       bounded end-to-end eight-GPU smoke pipeline
   push                          rsync this checkout to HyperStack
   pull                          copy all HyperStack scratch into scratch/hyperstack
-  build-cache smoke|full        prebuild ephemeral task-image cache (75 workers)
+  build-cache smoke|full        prebuild ephemeral task-image cache (50 workers)
   collect verified|swesmith     collect with 8 GPU shards, 12 workers each
   evaluate verified|swesmith    merge and evaluate trajectories
   analyze verified|swesmith     write deterministic analysis

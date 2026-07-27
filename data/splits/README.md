@@ -12,6 +12,10 @@ project. All files were generated from dataset revision
 - `swesmith_train_5000_instance_ids.txt`: the trajectory-collection sample,
   drawn only from `train_instance_ids.txt` and covering all 117 training
   repository snapshots.
+- `swesmith_train_1000_instance_ids.txt`: a proportional subset of the tracked
+  5,000-task training sample covering all 117 training repository snapshots,
+  used as the initial Hyperstack collection. Its ordered-file SHA-256 is
+  `4d60dbdc69aca4a1704d8c23ed0a72161e96fe93d077212aedb68e1312412965`.
 - `swesmith_validation_500_instance_ids.txt`: the validation sample, drawn
   only from `validation_instance_ids.txt` and covering all 14 validation
   repository snapshots.

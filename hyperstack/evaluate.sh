@@ -14,11 +14,11 @@ case "$FAMILY" in
     SPLIT="${SPLIT:-test}"
     ;;
   swesmith)
-    RUN_NAME="${RUN_NAME:-swesmith-train-5000}"
-    EXPECTED_TASKS="${EXPECTED_TASKS:-5000}"
+    RUN_NAME="${RUN_NAME:-swesmith-train-1000}"
+    EXPECTED_TASKS="${EXPECTED_TASKS:-1000}"
     DATASET="${DATASET:-SWE-bench/SWE-smith-py}"
     SPLIT="${SPLIT:-train}"
-    TASK_IDS_FILE="${TASK_IDS_FILE:-data/splits/swesmith_train_5000_instance_ids.txt}"
+    TASK_IDS_FILE="${TASK_IDS_FILE:-data/splits/swesmith_train_1000_instance_ids.txt}"
     ;;
   *)
     echo "Usage: bash hyperstack/evaluate.sh verified|swesmith" >&2
@@ -37,6 +37,7 @@ fi
 export SWESMITH_EVAL_RUNTIME=apptainer
 RUN_ROOT="${RUN_ROOT:-$DEBUG_DEPO_SCRATCH/runs/$RUN_NAME}"
 TASK_IDS_FILE="${TASK_IDS_FILE:-}"
+EVALUATION_TASK_IDS_FILE="${EVALUATION_TASK_IDS_FILE-$TASK_IDS_FILE}"
 AGENTFORGE_MODEL="${AGENTFORGE_MODEL:-Kwai-Klear/Klear-AgentForge-8B-SFT}"
 
 cat <<MSG
@@ -47,6 +48,7 @@ HyperStack $FAMILY evaluation
   expected shards: $NUM_SHARDS
   workers:         $EVAL_MAX_WORKERS
   runtime:         Apptainer
+  task IDs:        ${EVALUATION_TASK_IDS_FILE:-merged predictions}
 MSG
 if [[ "${DRY_RUN:-0}" == "1" ]]; then
   echo "Dry run: no predictions merged or evaluated."
@@ -129,7 +131,7 @@ else
 
     DATASET="$DATASET" \
     SPLIT="$SPLIT" \
-    TASK_IDS_FILE="$TASK_IDS_FILE" \
+    TASK_IDS_FILE="$EVALUATION_TASK_IDS_FILE" \
     PREDICTIONS_PATH="$sample_merged/predictions.jsonl" \
     SUMMARY_OUTPUT="$sample_eval/summary.json" \
     LOG_DIR="$sample_eval/logs" \

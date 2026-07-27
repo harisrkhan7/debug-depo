@@ -14,7 +14,7 @@ case "$OBJECTIVE" in
     ;;
 esac
 
-TRAIN_RUN_NAME="${TRAIN_RUN_NAME:-swesmith-train-5000}"
+TRAIN_RUN_NAME="${TRAIN_RUN_NAME:-swesmith-train-1000}"
 TRAIN_RUN_ROOT="${TRAIN_RUN_ROOT:-$DEBUG_DEPO_SCRATCH/runs/$TRAIN_RUN_NAME}"
 RUN_ROOT="$TRAIN_RUN_ROOT"
 # shellcheck disable=SC1091

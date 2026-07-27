@@ -12,8 +12,8 @@ case "$FAMILY" in
     EXPECTED_TASKS="${EXPECTED_TASKS:-500}"
     ;;
   swesmith)
-    RUN_NAME="${RUN_NAME:-swesmith-train-5000}"
-    EXPECTED_TASKS="${EXPECTED_TASKS:-5000}"
+    RUN_NAME="${RUN_NAME:-swesmith-train-1000}"
+    EXPECTED_TASKS="${EXPECTED_TASKS:-1000}"
     RUNS_PER_TEMPERATURE="${RUNS_PER_TEMPERATURE:-4}"
     TEMPERATURES="${TEMPERATURES:-0.6:0.7}"
     read -r -a analysis_temperature_values <<<"${TEMPERATURES//:/ }"

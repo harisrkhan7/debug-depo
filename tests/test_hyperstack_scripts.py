@@ -32,9 +32,10 @@ def test_h200_defaults_are_exposed(tmp_path: Path) -> None:
         "-c",
         (
             "source hyperstack/env.sh; "
-            'printf "%s|%s|%s|%s|%s|%s" '
+            'printf "%s|%s|%s|%s|%s|%s|%s" '
             '"$NUM_SHARDS" "$ROLLOUT_WORKERS" "$CACHE_BUILD_MAX_WORKERS" '
-            '"$NUM_PROCESSES" "$GPU_IDS" "$APPTAINER_MKSQUASHFS_ARGS"'
+            '"$EVAL_MAX_WORKERS" "$NUM_PROCESSES" "$GPU_IDS" '
+            '"$APPTAINER_MKSQUASHFS_ARGS"'
         ),
         env={
             "HYPERSTACK_PERSISTENT_ROOT": str(tmp_path / "persistent"),
@@ -42,7 +43,7 @@ def test_h200_defaults_are_exposed(tmp_path: Path) -> None:
         },
     )
     assert completed.returncode == 0, completed.stderr
-    assert completed.stdout == "8|12|75|8|0,1,2,3,4,5,6,7|-processors 2"
+    assert completed.stdout == "8|8|50|80|8|0,1,2,3,4,5,6,7|-processors 2"
 
 
 def test_validation_pipeline_dry_run_uses_holdout_and_all_shards(tmp_path: Path) -> None:
@@ -59,7 +60,27 @@ def test_validation_pipeline_dry_run_uses_holdout_and_all_shards(tmp_path: Path)
     assert "swesmith-validation-500" in completed.stdout
     assert "swesmith_validation_500_instance_ids.txt" in completed.stdout
     assert "shards/GPUs:         8 / 0,1,2,3,4,5,6,7" in completed.stdout
-    assert "workers per shard:   12" in completed.stdout
+    assert "workers per shard:   8" in completed.stdout
+
+
+def test_swesmith_pipeline_defaults_to_initial_1000_task_run(tmp_path: Path) -> None:
+    completed = run_script(
+        "hyperstack/run.sh",
+        "pipeline",
+        "swesmith",
+        env={
+            "DRY_RUN": "1",
+            "HYPERSTACK_PERSISTENT_ROOT": str(tmp_path / "persistent"),
+            "HYPERSTACK_EPHEMERAL_ROOT": str(tmp_path / "ephemeral"),
+        },
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "swesmith-train-1000" in completed.stdout
+    assert "expected tasks:      1000" in completed.stdout
+    assert "swesmith_train_1000_instance_ids.txt" in completed.stdout
+    assert "workers per shard:   8" in completed.stdout
+    assert "workers:         80" in completed.stdout
+    assert "would analyze swesmith run" in completed.stdout
 
 
 def test_cache_workers_must_stay_in_requested_range(tmp_path: Path) -> None:
@@ -67,14 +88,14 @@ def test_cache_workers_must_stay_in_requested_range(tmp_path: Path) -> None:
         "hyperstack/build_cache.sh",
         "smoke",
         env={
-            "CACHE_BUILD_MAX_WORKERS": "49",
+            "CACHE_BUILD_MAX_WORKERS": "101",
             "DRY_RUN": "1",
             "HYPERSTACK_PERSISTENT_ROOT": str(tmp_path / "persistent"),
             "HYPERSTACK_EPHEMERAL_ROOT": str(tmp_path / "ephemeral"),
         },
     )
     assert completed.returncode == 2
-    assert "between 50 and 100" in completed.stderr
+    assert "at most 100" in completed.stderr
 
 
 def test_verified_smoke_dry_run_exercises_all_gpus(tmp_path: Path) -> None:
@@ -92,7 +113,7 @@ def test_verified_smoke_dry_run_exercises_all_gpus(tmp_path: Path) -> None:
     assert "agentforge-verified-hyperstack-smoke" in completed.stdout
     assert "expected tasks:      8" in completed.stdout
     assert "shards/GPUs:         8 / 0,1,2,3,4,5,6,7" in completed.stdout
-    assert "workers per shard:   12" in completed.stdout
+    assert "workers per shard:   8" in completed.stdout
     assert "expected shards: 8" in completed.stdout
     assert "would analyze verified run" in completed.stdout
 
@@ -112,8 +133,9 @@ def test_swesmith_smoke_dry_run_exercises_all_gpus(tmp_path: Path) -> None:
     assert "swesmith-hyperstack-smoke" in completed.stdout
     assert "expected tasks:      8" in completed.stdout
     assert "shards/GPUs:         8 / 0,1,2,3,4,5,6,7" in completed.stdout
-    assert "workers per shard:   12" in completed.stdout
+    assert "workers per shard:   8" in completed.stdout
     assert "expected shards: 8" in completed.stdout
+    assert "task IDs:        merged predictions" in completed.stdout
     assert "would analyze swesmith run" in completed.stdout
 
 
@@ -222,6 +244,17 @@ def test_setup_pulls_vllm_sif_atomically() -> None:
     assert 'apptainer inspect "$VLLM_IMAGE"' in script
     assert 'apptainer pull "$temporary_vllm_image"' in script
     assert 'mv -f -- "$temporary_vllm_image" "$VLLM_IMAGE"' in script
+
+
+def test_vllm_sif_may_use_persistent_or_ephemeral_storage() -> None:
+    common = (HYPERSTACK / "common.sh").read_text(encoding="utf-8")
+    assert '"$vllm_image_device" != "$persistent_device"' in common
+    assert '"$vllm_image_device" != "$ephemeral_device"' in common
+
+
+def test_parallel_cache_build_disables_shared_oci_layer_cache() -> None:
+    script = (HYPERSTACK / "build_cache.sh").read_text(encoding="utf-8")
+    assert 'APPTAINER_DISABLE_CACHE="${APPTAINER_DISABLE_CACHE:-1}"' in script
 
 
 def test_collection_rejects_non_apptainer_task_runtime(tmp_path: Path) -> None:

@@ -64,6 +64,7 @@ require_separate_storage() {
   local ephemeral_device
   local path
   local path_device
+  local vllm_image_device
   local -a persistent_paths
   local -a ephemeral_paths
 
@@ -106,7 +107,6 @@ require_separate_storage() {
     "$SWEBENCH_APPTAINER_SIF_DIR"
     "$SWESMITH_APPTAINER_CACHE_DIR"
     "$SWESMITH_APPTAINER_SIF_DIR"
-    "$(dirname "$VLLM_IMAGE")"
   )
   for path in "${ephemeral_paths[@]}"; do
     path_device="$(findmnt -n -o MAJ:MIN -T "$path" 2>/dev/null || true)"
@@ -115,6 +115,13 @@ require_separate_storage() {
       return 2
     fi
   done
+
+  vllm_image_device="$(findmnt -n -o MAJ:MIN -T "$(dirname "$VLLM_IMAGE")" 2>/dev/null || true)"
+  if [[ "$vllm_image_device" != "$persistent_device" && \
+    "$vllm_image_device" != "$ephemeral_device" ]]; then
+    echo "VLLM_IMAGE must be on persistent or ephemeral HyperStack storage: $VLLM_IMAGE" >&2
+    return 2
+  fi
 }
 
 wait_for_vllm() {

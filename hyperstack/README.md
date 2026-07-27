@@ -174,10 +174,12 @@ and 500 validation SWE-smith tasks:
 bash hyperstack/run.sh build-cache full
 ```
 
-The full command uses 75 concurrent pulls by default and caps each
-`mksquashfs` conversion at two processors through
-`APPTAINER_MKSQUASHFS_ARGS`. Choose any requested worker value from 50 through
-100:
+The full command uses 50 concurrent pulls by default, disables Apptainer's
+shared intermediate OCI layer cache, and caps each `mksquashfs` conversion at
+two processors through `APPTAINER_MKSQUASHFS_ARGS`. Disabling the intermediate
+cache prevents concurrent pulls from corrupting its OCI metadata; completed
+SIFs remain cached in the family SIF directories. Override concurrency only
+after measuring:
 
 ```bash
 CACHE_BUILD_MAX_WORKERS=50 \
@@ -188,8 +190,9 @@ Completed SIFs are reused until ephemeral storage is cleared. The full build
 has a conservative 1,000 GiB free-space guard on the ephemeral cache
 filesystem; set `MIN_FULL_CACHE_FREE_GIB` higher for your flavor sizing.
 Collections of 100 or more tasks also check for 500 GiB free by default; the
-5,000-task SWE-smith run checks for 1,000 GiB. These are early safety floors,
-not estimates of final disk usage.
+initial 1,000-task Hyperstack run therefore requires 500 GiB free. A 5,000-task
+override checks for 1,000 GiB. These are early safety floors, not estimates of
+final disk usage.
 
 ## Short smoke jobs
 
@@ -237,17 +240,17 @@ RUN_NAME=agentforge-verified-h200 \
   bash hyperstack/run.sh pipeline verified
 ```
 
-Run the tracked 5,000-task SWE-smith training collection. This creates eight
-trajectories per task (four at each of temperatures 0.6 and 0.7), evaluates
-all sample slots, and analyzes the result:
+Run the initial 1,000-task SWE-smith training collection. This creates eight
+trajectories per task (four at each of temperatures 0.6 and 0.7), for 8,000
+trajectories in total, evaluates all sample slots, and analyzes the result:
 
 ```bash
-RUN_NAME=swesmith-train-5000 \
+RUN_NAME=swesmith-train-1000 \
   bash hyperstack/run.sh pipeline swesmith
 ```
 
 Each collection uses eight shards and all eight GPUs. Every shard owns one GPU,
-one private vLLM server, and 12 trajectory workers. vLLM and mini-swe task
+one private vLLM server, and 8 trajectory workers. vLLM and mini-swe task
 environments both run through Apptainer and reuse the ephemeral SIF cache.
 
 Stages may also be run or resumed separately:
@@ -273,17 +276,17 @@ Build and validate both immutable preference datasets after the SWE-smith
 training run has been evaluated:
 
 ```bash
-RUN_NAME=swesmith-train-5000 \
+RUN_NAME=swesmith-train-1000 \
   bash hyperstack/run.sh preference-data
 
-RUN_NAME=swesmith-train-5000 \
+RUN_NAME=swesmith-train-1000 \
   bash hyperstack/run.sh validate-data
 ```
 
 Train and package DMPO on all eight GPUs:
 
 ```bash
-RUN_NAME=swesmith-train-5000 \
+RUN_NAME=swesmith-train-1000 \
 EXPERIMENT_ARM=dmpo \
 DMPO_TRIAL_NAME=gamma07 \
   bash hyperstack/run.sh dmpo
@@ -292,7 +295,7 @@ DMPO_TRIAL_NAME=gamma07 \
 Train DEPO from the selected packaged DMPO model:
 
 ```bash
-RUN_NAME=swesmith-train-5000 \
+RUN_NAME=swesmith-train-1000 \
 EXPERIMENT_ARM=dmpo-depo \
 DMPO_TRIAL_NAME=gamma07 \
 DEPO_TRIAL_NAME=alpha2 \
@@ -302,7 +305,7 @@ DEPO_TRIAL_NAME=alpha2 \
 The complete default data → DMPO → DEPO sequence is:
 
 ```bash
-RUN_NAME=swesmith-train-5000 \
+RUN_NAME=swesmith-train-1000 \
 EXPERIMENT_ARM=dmpo-depo \
 DMPO_TRIAL_NAME=gamma07 \
 DEPO_TRIAL_NAME=alpha2 \
@@ -315,7 +318,7 @@ H200. Checkpoints and packaged models remain in the persistent run root.
 The combined command accepts separate settings for each stage:
 
 ```bash
-RUN_NAME=swesmith-train-5000 \
+RUN_NAME=swesmith-train-1000 \
 EXPERIMENT_ARM=dmpo-depo \
 DMPO_TRIAL_NAME=gamma09-lr5e7 \
 DEPO_TRIAL_NAME=alpha2-lr1e5 \
@@ -339,7 +342,7 @@ separate checkpoints, manifests, packages, and evaluation paths.
 ## Validation
 
 Run the repository-disjoint 500-task SWE-smith validation pipeline with the
-same eight-shard, twelve-worker-per-shard layout:
+same eight-shard, eight-worker-per-shard layout:
 
 ```bash
 bash hyperstack/run.sh validate
@@ -348,12 +351,12 @@ bash hyperstack/run.sh validate
 Evaluate a packaged DMPO or DEPO model on the 500-task SWE-bench Verified set:
 
 ```bash
-TRAIN_RUN_NAME=swesmith-train-5000 \
+TRAIN_RUN_NAME=swesmith-train-1000 \
 EXPERIMENT_ARM=dmpo \
 DMPO_TRIAL_NAME=gamma07 \
   bash hyperstack/run.sh validate-model dmpo
 
-TRAIN_RUN_NAME=swesmith-train-5000 \
+TRAIN_RUN_NAME=swesmith-train-1000 \
 EXPERIMENT_ARM=dmpo-depo \
 DMPO_TRIAL_NAME=gamma07 \
 DEPO_TRIAL_NAME=alpha2 \
@@ -374,7 +377,7 @@ VLLM_GPU_MEMORY_UTILIZATION=0.85 \
   bash hyperstack/run.sh collect verified
 ```
 
-`NUM_SHARDS=8`, eight `GPU_IDS`, `ROLLOUT_WORKERS=12`, and
+`NUM_SHARDS=8`, eight `GPU_IDS`, `ROLLOUT_WORKERS=8`, and
 `NUM_PROCESSES=8` are enforced by the relevant H200 workflows. Evaluation does
 not require GPUs and uses the requested ephemeral task-image cache.
 

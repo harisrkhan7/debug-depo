@@ -22,7 +22,7 @@ fi
 
 # Apptainer converts each OCI image to SIF with mksquashfs. Unless constrained,
 # every concurrent mksquashfs process may use all processors visible to the VM;
-# Linux schedules those threads but does not divide the 192 H200-host vCPUs
+# Linux schedules those threads but does not divide the 192 H100-host vCPUs
 # evenly between cache workers. All pulls in one dataset family also share an
 # OCI metadata/cache directory. High process concurrency can corrupt transient
 # OCI JSON there, producing "unexpected end of JSON input" or "invalid character

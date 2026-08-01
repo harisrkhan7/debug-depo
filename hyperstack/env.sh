@@ -55,7 +55,7 @@ export VLLM_APPTAINER_SOURCE="${VLLM_APPTAINER_SOURCE:-docker://vllm/vllm-openai
 export VLLM_PORT_BASE="${VLLM_PORT_BASE:-18000}"
 export VLLM_GPU_MEMORY_UTILIZATION="${VLLM_GPU_MEMORY_UTILIZATION:-0.90}"
 
-# H200 x8 defaults requested for this instance.
+# Eight-GPU defaults for the documented H100 SXM5 x8 deployment.
 export NUM_SHARDS="${NUM_SHARDS:-8}"
 export GPU_IDS="${GPU_IDS:-0,1,2,3,4,5,6,7}"
 export ROLLOUT_WORKERS="${ROLLOUT_WORKERS:-8}"

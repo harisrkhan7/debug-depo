@@ -12,6 +12,7 @@ from debug_depo.evaluate import build_evaluation_command, model_report_name, sum
 def args(**overrides):
     values = {
         "dataset": "princeton-nlp/SWE-bench_Verified",
+        "dataset_revision": "c104f840cc67f8b6eec6f759ebc8b2693d585d4a",
         "split": "test",
         "predictions_path": "predictions.jsonl",
         "max_workers": 2,
@@ -121,6 +122,7 @@ def test_summarize_report_target_requires_matching_dataset_split_and_model():
 
     for overrides in (
         {"dataset": "org/other-dataset"},
+        {"dataset_revision": "different-revision"},
         {"split": "validation"},
         {"model": "org/other-model"},
     ):
@@ -149,6 +151,15 @@ def test_run_evaluation_moves_harness_report_from_eval_cwd(tmp_path, monkeypatch
         return subprocess.CompletedProcess(command, 0)
 
     monkeypatch.setattr(evaluate.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        evaluate,
+        "validate_evaluator_dataset_snapshot",
+        lambda _args: {
+            "dataset_revision": _args.dataset_revision,
+            "task_rows_sha256": "a" * 64,
+            "selected_task_count": 500,
+        },
+    )
 
     summary = evaluate.run_evaluation(
         args(
@@ -165,6 +176,7 @@ def test_run_evaluation_moves_harness_report_from_eval_cwd(tmp_path, monkeypatch
     assert summary["report_path"] == str(expected_report)
     assert summary["status"] == "ok"
     assert summary["resolved_instances"] == 1
+    assert summary["task_rows_sha256"] == "a" * 64
 
 
 def test_run_evaluation_rejects_a_failed_harness(tmp_path, monkeypatch):
@@ -176,6 +188,15 @@ def test_run_evaluation_rejects_a_failed_harness(tmp_path, monkeypatch):
         "run",
         lambda command, cwd, check: subprocess.CompletedProcess(command, 9),
     )
+    monkeypatch.setattr(
+        evaluate,
+        "validate_evaluator_dataset_snapshot",
+        lambda _args: {
+            "dataset_revision": _args.dataset_revision,
+            "task_rows_sha256": "a" * 64,
+            "selected_task_count": 500,
+        },
+    )
 
     with pytest.raises(RuntimeError, match="exited with status 9"):
         evaluate.run_evaluation(
@@ -185,3 +206,35 @@ def test_run_evaluation_rejects_a_failed_harness(tmp_path, monkeypatch):
                 instance_ids=[],
             )
         )
+
+
+def test_snapshot_validation_rejects_current_rows_that_differ_from_pin(monkeypatch):
+    pinned = [{"instance_id": "a", "problem_statement": "pinned"}]
+    current = [{"instance_id": "a", "problem_statement": "current"}]
+
+    def fake_load(_dataset, _split, *, revision):
+        return pinned if revision else current
+
+    monkeypatch.setattr(evaluate, "load_swebench_tasks", fake_load)
+
+    with pytest.raises(RuntimeError, match="do not match the requested revision"):
+        evaluate.validate_evaluator_dataset_snapshot(
+            args(instance_ids=["a"], instance_ids_file=None)
+        )
+
+
+def test_snapshot_validation_records_matching_pinned_rows(monkeypatch):
+    tasks = [{"instance_id": "a", "problem_statement": "same"}]
+    monkeypatch.setattr(
+        evaluate,
+        "load_swebench_tasks",
+        lambda _dataset, _split, *, revision: list(tasks),
+    )
+
+    snapshot = evaluate.validate_evaluator_dataset_snapshot(
+        args(instance_ids=["a"], instance_ids_file=None)
+    )
+
+    assert snapshot["dataset_revision"] == args().dataset_revision
+    assert snapshot["selected_task_count"] == 1
+    assert len(snapshot["task_rows_sha256"]) == 64

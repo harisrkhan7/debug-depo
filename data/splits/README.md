@@ -31,7 +31,8 @@ project. All files were generated from dataset revision
   The cache builder deduplicates these task IDs into 131 SWE-smith
   repository-image SIFs.
 - `swesmith_py_split_manifest.json`: dataset revision, policies, counts,
-  memberships, and ordered-file SHA-256 hashes.
+  memberships, and ordered-file SHA-256 hashes for the parent memberships and
+  every tracked 5,000/500/200/100 subset.
 
 The 5,000 training IDs and 500 validation IDs are disjoint. Their parent
 memberships are also repository-disjoint, so no repository snapshot selected
@@ -77,8 +78,9 @@ cryptographic secrecy.
 
 ## Regeneration
 
-Regenerate only the 5,000/500/cache files from the tracked parent memberships
-without downloading the dataset:
+Regenerate the 5,000-task training sample, nested 100/200/500 validation
+samples, cache union, and their manifest provenance from the tracked parent
+memberships without downloading the dataset:
 
 ```bash
 python -m debug_depo.prepare_swesmith_splits --subsets-only
@@ -100,8 +102,9 @@ python -m debug_depo.prepare_swesmith_splits \
   --validation-subset-size 500
 ```
 
-The generated filenames include their task counts. Review and commit the
-manifest and ID files together if the dataset revision, seed, or sizes change.
+The generated filenames include their task counts. Generation fails if the
+tracked screening budgets are not nested. Review and commit the manifest and
+ID files together if the dataset revision, seed, or sizes change.
 
 ## Cluster usage
 

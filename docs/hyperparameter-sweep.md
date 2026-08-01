@@ -296,6 +296,14 @@ optimizing a small validation set increases selection bias
 The examples assume the completed 1,000-task artifacts use
 `RUN_NAME=swesmith-train-1000-r2`.
 
+In each new HyperStack shell, first load the tracked defaults and any ignored
+machine-local overrides. This defines `DEBUG_DEPO_SCRATCH` and the persistent
+`UV` executable used below:
+
+```bash
+source hyperstack/env.sh
+```
+
 Train a DMPO trial:
 
 ```bash
@@ -359,7 +367,7 @@ For single-rollout SWE-smith analyses, compare the generated
 `analysis/rollouts.csv` files:
 
 ```bash
-uv run debug-depo-compare-preference-arms \
+"$UV" run debug-depo-compare-preference-arms \
   --baseline sft=<sft-run>/analysis/rollouts.csv \
   --arm dmpo=<dmpo-run>/analysis/rollouts.csv \
   --arm dmpo-depo=<depo-run>/analysis/rollouts.csv \
@@ -369,8 +377,9 @@ uv run debug-depo-compare-preference-arms \
 ```
 
 The comparison command rejects duplicate or mismatched task matrices,
-unscored outcomes, inconsistent resolution labels, and missing efficiency
-telemetry.
+unscored outcomes, inconsistent resolution labels, and missing step or token
+telemetry. Use `--allow-incomplete-telemetry` only for explicitly exploratory
+summaries; incomplete total-token arms remain ineligible for selection.
 
 ## Trial record
 
@@ -379,7 +388,7 @@ Generate the experiment ledger after each comparison:
 ```bash
 TRAIN_RUN_ROOT="$DEBUG_DEPO_SCRATCH/runs/swesmith-train-1000-r2"
 
-uv run debug-depo-build-trial-record \
+"$UV" run debug-depo-build-trial-record \
   --run-root "$TRAIN_RUN_ROOT" \
   --comparison 100=results/preference-sweep-100.json \
   --comparison 200=results/preference-sweep-200.json \
@@ -415,7 +424,7 @@ For pulled artifacts whose original evaluation paths are unavailable and
 whose arm labels do not match trial names, provide an explicit mapping:
 
 ```bash
-uv run debug-depo-build-trial-record \
+"$UV" run debug-depo-build-trial-record \
   --run-root "$TRAIN_RUN_ROOT" \
   --comparison 100=results/preference-sweep-100.json \
   --arm-trial dmpo=dmpo/g07-lr1e6-b01-ga16

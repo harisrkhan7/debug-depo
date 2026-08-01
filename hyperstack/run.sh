@@ -70,7 +70,7 @@ Actions:
   push                          rsync this checkout to HyperStack
   pull                          copy all HyperStack scratch into scratch/hyperstack
   build-cache smoke|full        prebuild ephemeral task-image cache (50 workers)
-  collect verified|swesmith     collect with 8 GPU shards, 12 workers each
+  collect verified|swesmith     collect with 8 GPU shards, 8 workers each
   evaluate verified|swesmith    merge and evaluate trajectories
   analyze verified|swesmith     write deterministic analysis
   pipeline verified|swesmith    collect, evaluate, and analyze

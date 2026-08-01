@@ -58,7 +58,7 @@ $gpu_inventory
 MSG
 
 if ((cpu_count < 192 || memory_gib < 1700)); then
-  echo "WARNING: this VM is smaller than the expected 192-vCPU / ~1.9-TB host." >&2
+  echo "WARNING: this VM is smaller than the expected 192-vCPU / 1.8-TB host." >&2
 fi
 
 root_total_gib="$(df -Pk "$HYPERSTACK_PERSISTENT_ROOT" | awk 'NR == 2 {print int($2 / 1024 / 1024)}')"

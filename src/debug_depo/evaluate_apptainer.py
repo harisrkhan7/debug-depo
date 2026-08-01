@@ -493,6 +493,7 @@ def run_apptainer_evaluation(args: argparse.Namespace) -> dict[str, Any]:
         **summarize_report(
             report,
             dataset=args.dataset,
+            dataset_revision=args.dataset_revision,
             split=args.split,
             model=args.model,
         ),

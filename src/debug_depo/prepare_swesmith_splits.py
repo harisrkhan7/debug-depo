@@ -23,6 +23,8 @@ DEFAULT_VALIDATION_FRACTION = 0.10
 DEFAULT_SPLIT_SEED = 42
 DEFAULT_TRAJECTORY_SUBSET_SIZE = 5_000
 DEFAULT_VALIDATION_SUBSET_SIZE = 500
+DEFAULT_VALIDATION_SCREENING_SIZES = (100, 200)
+SPLIT_MANIFEST_SCHEMA_VERSION = 3
 TRAJECTORY_SUBSET_FILENAME = "swesmith_train_5000_instance_ids.txt"
 VALIDATION_SUBSET_FILENAME = "swesmith_validation_500_instance_ids.txt"
 CACHE_SUBSET_FILENAME = "swesmith_cache_5500_instance_ids.txt"
@@ -114,6 +116,7 @@ def write_task_subsets(
     output_dir: str | Path,
     trajectory_subset_size: int = DEFAULT_TRAJECTORY_SUBSET_SIZE,
     validation_subset_size: int = DEFAULT_VALIDATION_SUBSET_SIZE,
+    validation_screening_sizes: tuple[int, ...] | None = None,
     seed: int = DEFAULT_SPLIT_SEED,
 ) -> dict[str, Any]:
     """Write training, validation, and cache-union task-ID files."""
@@ -137,6 +140,40 @@ def write_task_subsets(
         seed=seed,
         namespace="validation",
     )
+    if validation_screening_sizes is None:
+        validation_screening_sizes = (
+            DEFAULT_VALIDATION_SCREENING_SIZES
+            if validation_subset_size == DEFAULT_VALIDATION_SUBSET_SIZE
+            else ()
+        )
+    screening_sizes = sorted(set(validation_screening_sizes))
+    if any(not 1 <= size < validation_subset_size for size in screening_sizes):
+        raise ValueError(
+            "Validation screening sizes must be unique positive budgets smaller "
+            "than the main validation subset"
+        )
+
+    screening_subsets: dict[int, list[str]] = {}
+    previous_ids: set[str] = set()
+    for size in screening_sizes:
+        screening_ids = repository_covering_subset(
+            validation_ids,
+            size=size,
+            seed=seed,
+            namespace="validation",
+        )
+        screening_id_set = set(screening_ids)
+        if previous_ids and not previous_ids <= screening_id_set:
+            raise ValueError(
+                f"Validation screening memberships are not nested at budget {size}"
+            )
+        if not screening_id_set <= set(selected_validation_ids):
+            raise ValueError(
+                f"Validation screening budget {size} is not contained in the "
+                f"{validation_subset_size}-task validation subset"
+            )
+        screening_subsets[size] = screening_ids
+        previous_ids = screening_id_set
     cache_ids = trajectory_ids + selected_validation_ids
 
     output_root = ensure_dir(output_dir)
@@ -171,6 +208,24 @@ def write_task_subsets(
             encoding="utf-8",
         )
 
+    screening_metadata: dict[str, dict[str, Any]] = {}
+    for size, screening_ids in screening_subsets.items():
+        filename = f"swesmith_validation_{size}_instance_ids.txt"
+        path = output_root / filename
+        path.write_text(
+            "".join(f"{instance_id}\n" for instance_id in screening_ids),
+            encoding="utf-8",
+        )
+        screening_metadata[str(size)] = {
+            "source": "validation_instance_ids.txt",
+            "file": str(path),
+            "n_tasks": len(screening_ids),
+            "n_repositories": len(
+                {_repository_snapshot(item) for item in screening_ids}
+            ),
+            "sha256": _ordered_ids_sha256(screening_ids),
+        }
+
     return {
         "strategy": "repository_covering_proportional_hash_sample",
         "strategy_version": 1,
@@ -193,6 +248,7 @@ def write_task_subsets(
             "n_repositories": len({_repository_snapshot(item) for item in selected_validation_ids}),
             "sha256": _ordered_ids_sha256(selected_validation_ids),
         },
+        "validation_screening": screening_metadata,
         "cache": {
             "sources": [
                 trajectory_filename,
@@ -308,7 +364,7 @@ def prepare_swesmith_splits(args: argparse.Namespace) -> dict[str, Any]:
         str(task["repo"]) for task in tasks if str(task["instance_id"]) in train_id_set
     }
     manifest = {
-        "schema_version": 2,
+        "schema_version": SPLIT_MANIFEST_SCHEMA_VERSION,
         "dataset": args.dataset,
         "dataset_revision": args.dataset_revision,
         "source_split": args.source_split,
@@ -399,7 +455,7 @@ def main(argv: list[str] | None = None) -> int:
             split_manifest = read_json(manifest_path)
             if not isinstance(split_manifest, dict):
                 raise ValueError(f"Invalid split manifest: {manifest_path}")
-            split_manifest["schema_version"] = 2
+            split_manifest["schema_version"] = SPLIT_MANIFEST_SCHEMA_VERSION
             split_manifest["task_subsets"] = manifest
             write_json(manifest_path, split_manifest)
     else:

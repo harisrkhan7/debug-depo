@@ -139,6 +139,7 @@ def test_compare_does_not_rank_incomplete_total_token_telemetry(tmp_path):
         baseline=("sft", baseline),
         arms=[("dmpo", candidate)],
         output=tmp_path / "comparison.json",
+        allow_incomplete_telemetry=True,
     )
 
     by_name = {row["name"]: row for row in summary["arms"]}
@@ -146,3 +147,19 @@ def test_compare_does_not_rank_incomplete_total_token_telemetry(tmp_path):
     assert by_name["dmpo"]["success_noninferior"] is True
     assert by_name["dmpo"]["rankable"] is False
     assert by_name["dmpo"]["selection_eligible"] is False
+
+
+def test_compare_rejects_incomplete_efficiency_telemetry_by_default(tmp_path):
+    baseline = tmp_path / "baseline.csv"
+    candidate = tmp_path / "candidate.csv"
+    write_arm(baseline, arm_rows([True, False], [100, 200]))
+    rows = arm_rows([True, False], [90, 180])
+    rows[-1]["completion_tokens_total"] = ""
+    write_arm(candidate, rows)
+
+    with pytest.raises(ValueError, match="incomplete efficiency telemetry"):
+        compare_preference_arms(
+            baseline=("sft", baseline),
+            arms=[("dmpo", candidate)],
+            output=tmp_path / "comparison.json",
+        )

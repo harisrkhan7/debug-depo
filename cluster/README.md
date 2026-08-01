@@ -283,7 +283,7 @@ each shard 50 instances, with six trajectories active per shard. Every array
 element reserves `ncpus=12`, `mem=64gb`, and one GPU, and starts a private vLLM
 server on a job-specific localhost port. `MINI_SWE_WORKERS=1` is intentional:
 the six-way concurrency is provided by `ROLLOUT_WORKERS=6`, and each mini-swe
-command is already filtered to one instance. The four remaining CPU cores and
+command is already filtered to one instance. The six remaining CPU cores and
 additional host memory provide headroom for vLLM and container overhead.
 The per-trajectory timeout is 21,600 seconds, matching the completed full run.
 
@@ -307,14 +307,14 @@ $DEBUG_DEPO_SCRATCH/runs/agentforge-verified-full/
 
 Ten shards are a reasonable first full layout if the five-instance smoke test
 shows a typical trajectory finishes within roughly five hours. Approximate
-shard time is `ceil(tasks_per_shard / 8) * typical_task_time`, plus vLLM startup.
+shard time is `ceil(tasks_per_shard / 6) * typical_task_time`, plus vLLM startup.
 If that approaches the queue walltime, use 20 shards of 25 tasks instead:
 
 ```bash
 NUM_SHARDS=20 RUN_NAME=agentforge-verified-full-20 cluster/submit_verified_full.sh
 ```
 
-Twelve cores and 64 GB support eight writable task containers while retaining
+Twelve cores and 64 GB support six writable task containers while retaining
 CPU and host-memory headroom for vLLM tokenization. The single GPU is expected
 to become the limiting resource before the host allocation; do not increase
 `ROLLOUT_WORKERS` beyond 12 without checking vLLM queueing, CPU saturation,

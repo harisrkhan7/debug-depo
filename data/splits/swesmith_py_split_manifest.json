@@ -10,7 +10,7 @@
   "n_validation": 5099,
   "n_validation_repositories": 14,
   "requested_validation_fraction": 0.1,
-  "schema_version": 2,
+  "schema_version": 3,
   "seed": 42,
   "source_split": "train",
   "strategy": "repository_disjoint_hash_ranked_greedy",
@@ -45,6 +45,22 @@
       "n_tasks": 500,
       "sha256": "dd6342f7f4cb79ea206f523517fef7f3367f4a779cf0c088abf5b0e91088b154",
       "source": "validation_instance_ids.txt"
+    },
+    "validation_screening": {
+      "100": {
+        "file": "data/splits/swesmith_validation_100_instance_ids.txt",
+        "n_repositories": 14,
+        "n_tasks": 100,
+        "sha256": "99e09b02b651e89282f76b994bac6e82be1776928d5c09d1ce8721806493fcf9",
+        "source": "validation_instance_ids.txt"
+      },
+      "200": {
+        "file": "data/splits/swesmith_validation_200_instance_ids.txt",
+        "n_repositories": 14,
+        "n_tasks": 200,
+        "sha256": "a27dcfa4bafb154f3b70baf51ab50696f6b7e3f978bcc845b2f2d72091c437fb",
+        "source": "validation_instance_ids.txt"
+      }
     }
   },
   "train_instance_ids_file": "data/splits/train_instance_ids.txt",

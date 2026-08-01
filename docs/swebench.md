@@ -36,6 +36,14 @@ with the AgentForge model is compared with the paper's 38.2% target; partial
 runs and other datasets, splits, or models report measurements without target
 comparison fields.
 
+The official Docker evaluator does not accept a Hugging Face revision itself.
+Before launching it, this repository therefore loads the requested pinned rows
+and the upstream evaluator's current rows and requires their complete canonical
+row hashes to match. The evaluation summary records the revision and row hash,
+and paper-comparison fields additionally require the exact pinned revision. A
+snapshot mismatch fails before Docker starts; the Apptainer evaluator loads the
+pinned revision directly.
+
 To reuse the pipeline for another immutable dataset role:
 
 ```bash

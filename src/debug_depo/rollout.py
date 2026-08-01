@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -34,6 +33,7 @@ from debug_depo.data import (
     read_instance_ids_file,
     resolve_swebench_dataset_revision,
     select_tasks,
+    task_rows_sha256,
 )
 from debug_depo.utils import (
     ensure_dir,
@@ -114,17 +114,6 @@ def result_from_existing(output_dir: str | Path, instance: dict[str, Any]) -> di
         result["mini_swe_exit_status"] = mini_failure[0]
         result["mini_swe_exit_status_path"] = mini_failure[1]
     return result
-
-
-def _task_rows_sha256(tasks: list[dict[str, Any]]) -> str:
-    payload = json.dumps(
-        tasks,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        default=str,
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _resume_mismatches(
@@ -240,7 +229,7 @@ def collect_rollouts(args: argparse.Namespace) -> dict[str, Any]:
         "mini_workers": args.mini_workers,
         "mini_docker_start_concurrency": args.mini_docker_start_concurrency,
         "task_instance_ids": [str(task["instance_id"]) for task in tasks],
-        "task_rows_sha256": _task_rows_sha256(tasks),
+        "task_rows_sha256": task_rows_sha256(tasks),
     }
     run_config_path = output_dir / "run_config.json"
     if run_config_path.exists() and not args.overwrite:

@@ -73,7 +73,7 @@ def test_prepare_swesmith_splits_writes_ids_and_manifest(tmp_path, monkeypatch):
     assert set(train_ids) | set(validation_ids) == {task["instance_id"] for task in tasks}
     assert manifest == read_json(tmp_path / "swesmith_py_split_manifest.json")
     assert manifest["dataset_revision"] == "revision"
-    assert manifest["schema_version"] == 2
+    assert manifest["schema_version"] == 3
     assert manifest["task_subsets"]["trajectory"]["n_tasks"] == 2
     assert manifest["task_subsets"]["validation"]["n_tasks"] == 1
     assert manifest["task_subsets"]["cache"]["n_tasks"] == 3
@@ -158,3 +158,27 @@ def test_write_task_subsets_keeps_parent_membership_and_cache_union(tmp_path):
     assert metadata["trajectory"]["n_repositories"] == 3
     assert metadata["validation"]["n_repositories"] == 2
     assert metadata["cache"]["n_tasks"] == 9
+
+
+def test_default_validation_screening_subsets_are_nested_and_recorded(tmp_path):
+    train_ids = _snapshot_ids("a", 5_000)
+    validation_ids = _snapshot_ids("d", 500)
+
+    metadata = write_task_subsets(
+        train_ids=train_ids,
+        validation_ids=validation_ids,
+        output_dir=tmp_path,
+    )
+
+    memberships = {
+        size: set(
+            (tmp_path / f"swesmith_validation_{size}_instance_ids.txt")
+            .read_text()
+            .splitlines()
+        )
+        for size in (100, 200, 500)
+    }
+    assert memberships[100] <= memberships[200] <= memberships[500]
+    assert metadata["validation_screening"]["100"]["n_tasks"] == 100
+    assert metadata["validation_screening"]["200"]["n_tasks"] == 200
+    assert len(metadata["validation_screening"]["100"]["sha256"]) == 64

@@ -27,7 +27,7 @@ def test_all_hyperstack_shell_scripts_parse() -> None:
         assert completed.returncode == 0, f"{path.name}: {completed.stderr}"
 
 
-def test_h200_defaults_are_exposed(tmp_path: Path) -> None:
+def test_eight_gpu_defaults_are_exposed(tmp_path: Path) -> None:
     completed = run_script(
         "-c",
         (
@@ -44,6 +44,14 @@ def test_h200_defaults_are_exposed(tmp_path: Path) -> None:
     )
     assert completed.returncode == 0, completed.stderr
     assert completed.stdout == "8|8|50|80|8|0,1,2,3,4,5,6,7|-processors 2"
+
+
+def test_help_reports_current_collection_worker_default() -> None:
+    completed = run_script("hyperstack/run.sh", "help")
+
+    assert completed.returncode == 0, completed.stderr
+    assert "collect with 8 GPU shards, 8 workers each" in completed.stdout
+    assert "12 workers each" not in completed.stdout
 
 
 def test_validation_pipeline_dry_run_uses_holdout_and_all_shards(tmp_path: Path) -> None:

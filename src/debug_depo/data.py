@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -145,6 +146,19 @@ def instance_ids(tasks: list[dict[str, Any]]) -> list[str]:
     if any(not item for item in ids):
         raise ValueError("Every selected task must contain `instance_id`")
     return [str(item) for item in ids]
+
+
+def task_rows_sha256(tasks: list[dict[str, Any]]) -> str:
+    """Hash complete task rows in their selected order."""
+
+    payload = json.dumps(
+        tasks,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def write_task_selection(

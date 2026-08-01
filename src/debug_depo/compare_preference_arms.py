@@ -69,7 +69,12 @@ def _metric_fields(fieldnames: Sequence[str] | None, *, path: Path) -> dict[str,
     return fields
 
 
-def _load_arm(name: str, path: Path) -> dict[str, Any]:
+def _load_arm(
+    name: str,
+    path: Path,
+    *,
+    require_complete_telemetry: bool,
+) -> dict[str, Any]:
     if not path.is_file():
         raise FileNotFoundError(f"Arm {name!r} CSV does not exist: {path}")
     with path.open(newline="", encoding="utf-8") as handle:
@@ -90,6 +95,7 @@ def _load_arm(name: str, path: Path) -> dict[str, Any]:
     invalid_statuses: dict[str, str] = {}
     invalid_resolved: list[str] = []
     inconsistent_resolved: list[str] = []
+    incomplete_telemetry: dict[str, list[str]] = {}
     for row_number, row in enumerate(rows, 2):
         instance_id = str(row.get("instance_id", "")).strip()
         if not instance_id:
@@ -106,6 +112,13 @@ def _load_arm(name: str, path: Path) -> dict[str, Any]:
             invalid_resolved.append(instance_id)
         elif resolved != (status == "resolved"):
             inconsistent_resolved.append(instance_id)
+        missing_metrics = [
+            metric
+            for metric, field in fields.items()
+            if numeric_value(row.get(field)) is None
+        ]
+        if missing_metrics:
+            incomplete_telemetry[instance_id] = missing_metrics
 
     if duplicates:
         raise ValueError(
@@ -124,6 +137,11 @@ def _load_arm(name: str, path: Path) -> dict[str, Any]:
         raise ValueError(
             f"Arm {name!r} has resolved values inconsistent with evaluation_status: "
             f"{inconsistent_resolved[:10]}"
+        )
+    if require_complete_telemetry and incomplete_telemetry:
+        examples = sorted(incomplete_telemetry.items())[:10]
+        raise ValueError(
+            f"Arm {name!r} contains incomplete efficiency telemetry: {examples}"
         )
 
     ordered_ids = sorted(indexed)
@@ -203,6 +221,7 @@ def compare_preference_arms(
     output: str | Path,
     success_tolerance: float = 0.0,
     expected_tasks: int | None = None,
+    allow_incomplete_telemetry: bool = False,
 ) -> dict[str, Any]:
     """Select the cheapest success-noninferior arm on an exact task matrix."""
 
@@ -219,7 +238,14 @@ def compare_preference_arms(
     if duplicate_names:
         raise ValueError(f"Duplicate arm names: {duplicate_names}")
 
-    loaded = [_load_arm(name, Path(path)) for name, path in specs]
+    loaded = [
+        _load_arm(
+            name,
+            Path(path),
+            require_complete_telemetry=not allow_incomplete_telemetry,
+        )
+        for name, path in specs
+    ]
     baseline_data = loaded[0]
     if expected_tasks is not None and len(baseline_data["ids"]) != expected_tasks:
         raise ValueError(
@@ -303,6 +329,7 @@ def compare_preference_arms(
         ).hexdigest(),
         "expected_tasks": expected_tasks,
         "success_tolerance": success_tolerance,
+        "allow_incomplete_telemetry": allow_incomplete_telemetry,
         "baseline_resolution_rate": baseline_rate,
         "success_threshold": success_threshold,
         "ranking_metric": "total_tokens_per_resolved_task",
@@ -327,6 +354,14 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         type=_parse_arm_spec,
         metavar="NAME=CSV_PATH",
+    )
+    parser.add_argument(
+        "--allow-incomplete-telemetry",
+        action="store_true",
+        help=(
+            "Permit missing step/token values for exploratory summaries; incomplete "
+            "total-token arms remain ineligible for selection."
+        ),
     )
     parser.add_argument(
         "--arm",
@@ -362,6 +397,7 @@ def main(argv: list[str] | None = None) -> int:
         output=args.output,
         success_tolerance=args.success_tolerance,
         expected_tasks=args.expected_tasks,
+        allow_incomplete_telemetry=args.allow_incomplete_telemetry,
     )
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0 if summary["selected_arm"] is not None else 2

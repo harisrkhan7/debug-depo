@@ -207,6 +207,9 @@ Here `0.01` allows at most a one-percentage-point absolute resolution-rate
 drop. The command ranks the baseline and arms by total tokens per resolved
 task, reports paired step and token deltas, and refuses selection when task
 IDs differ, an evaluation is unscored, or token telemetry is incomplete.
+Step, prompt-token, completion-token, and total-token telemetry are all strict
+by default; `--allow-incomplete-telemetry` is reserved for exploratory
+summaries.
 
 The guarded workflow in `notebooks/cluster_preference_training.ipynb` uses 64
 rows, an 8K context, one epoch, and a tracked five-task evaluation split for

@@ -1,27 +1,30 @@
 # HyperStack runner
 
 This directory provides the same high-level workflows as `cluster/`, but runs
-them directly on one HyperStack H200 x8 VM rather than submitting PBS jobs.
-It assumes the requested 192-vCPU, approximately 1.9-TB-RAM host with eight
-141-GB H200 GPUs; `preflight` prints the detected inventory.
+them directly on one HyperStack H100 80 GB SXM5 x8 VM rather than submitting
+PBS jobs. It targets the Canada `n3-H100-SXM5x8` flavor: 192 vCPUs, 1,800 GB
+RAM, eight 80 GB H100 GPUs, and 32,000 GB of ephemeral storage. `preflight`
+prints the detected inventory. The scripts themselves remain compatible with
+other HyperStack hosts that expose at least eight GPUs.
 
 The tracked defaults target:
 
 | Resource | Default |
 | --- | ---: |
+| GPU model | H100 80 GB SXM5 |
 | GPUs | 8 |
 | Collection shards | 8 (one vLLM server per GPU) |
-| Trajectory workers | 12 per shard (96 total slots) |
-| Cache-build workers | 75 (valid range: 50–100) |
+| Trajectory workers | 8 per shard (64 total slots) |
+| Cache-build workers | 50 (maximum: 100) |
 | Preference-training processes | 8 |
-| Evaluation workers | 64 |
+| Evaluation workers | 80 |
 
 ## Storage and hibernation
 
-The standard HyperStack H200 x8 flavor separates a small persistent root disk
-from the 32 TB ephemeral disk. HyperStack clears the ephemeral disk when the VM
-is hibernated or deleted. The root disk survives hibernation, but is deleted
-with the VM.
+The standard HyperStack H100 SXM5 x8 flavor separates a 100 GB persistent root
+disk from the 32 TB ephemeral disk. HyperStack clears the ephemeral disk when
+the VM is hibernated or deleted. The root disk survives hibernation, but is
+deleted with the VM.
 
 The scripts deliberately split rebuildable working data from durable experiment
 artifacts:
@@ -208,7 +211,7 @@ bash hyperstack/run.sh smoke verified
 bash hyperstack/run.sh smoke swesmith
 ```
 
-Both use all eight GPUs, eight shards, the configured 12-worker shard pools,
+Both use all eight GPUs, eight shards, the configured 8-worker shard pools,
 and a default ceiling of 20 agent steps. The evaluation stage uses eight
 workers. The first smoke run may still need to download task images that were
 not covered by `build-cache smoke`.
@@ -236,7 +239,7 @@ DRY_RUN=1 bash hyperstack/run.sh pipeline swesmith
 Run SWE-bench Verified collection, evaluation, and analysis:
 
 ```bash
-RUN_NAME=agentforge-verified-h200 \
+RUN_NAME=agentforge-verified-h100 \
   bash hyperstack/run.sh pipeline verified
 ```
 
@@ -256,13 +259,13 @@ environments both run through Apptainer and reuse the ephemeral SIF cache.
 Stages may also be run or resumed separately:
 
 ```bash
-RUN_NAME=agentforge-verified-h200 \
+RUN_NAME=agentforge-verified-h100 \
   bash hyperstack/run.sh collect verified
 
-RUN_NAME=agentforge-verified-h200 \
+RUN_NAME=agentforge-verified-h100 \
   bash hyperstack/run.sh evaluate verified
 
-RUN_NAME=agentforge-verified-h200 \
+RUN_NAME=agentforge-verified-h100 \
   bash hyperstack/run.sh analyze verified
 ```
 
@@ -313,7 +316,7 @@ DEPO_TRIAL_NAME=alpha2 \
 ```
 
 All training commands default to `NUM_PROCESSES=8`, so Accelerate uses every
-H200. Checkpoints and packaged models remain in the persistent run root.
+H100. Checkpoints and packaged models remain in the persistent run root.
 
 The combined command accepts separate settings for each stage:
 
@@ -378,7 +381,7 @@ VLLM_GPU_MEMORY_UTILIZATION=0.85 \
 ```
 
 `NUM_SHARDS=8`, eight `GPU_IDS`, `ROLLOUT_WORKERS=8`, and
-`NUM_PROCESSES=8` are enforced by the relevant H200 workflows. Evaluation does
+`NUM_PROCESSES=8` are enforced by the relevant H100 workflows. Evaluation does
 not require GPUs and uses the requested ephemeral task-image cache.
 
 The `docker://` prefix above is an Apptainer OCI transport URI. It tells

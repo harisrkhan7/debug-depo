@@ -19,6 +19,13 @@ project. All files were generated from dataset revision
 - `swesmith_validation_500_instance_ids.txt`: the validation sample, drawn
   only from `validation_instance_ids.txt` and covering all 14 validation
   repository snapshots.
+- `swesmith_validation_100_instance_ids.txt` and
+  `swesmith_validation_200_instance_ids.txt`: deterministic nested screening
+  budgets for the DMPO/DEPO
+  [hyperparameter sweep](../../docs/hyperparameter-sweep.md). Both
+  cover all 14 validation repository snapshots, the 100-task sample is a
+  subset of the 200-task sample, and both are subsets of the tracked
+  500-task sample.
 - `swesmith_cache_5500_instance_ids.txt`: the exact union of the 5,000
   trajectory tasks and 500 validation tasks. Use this to prebuild the cache.
   The cache builder deduplicates these task IDs into 131 SWE-smith
@@ -47,7 +54,7 @@ That choice reduces leakage from closely related mutations of the same
 repository into both training and validation. It also means the task counts
 cannot generally be exactly 90/10.
 
-## How the 5,000/500 task samples were chosen
+## How the training and validation task samples were chosen
 
 Each sample is selected independently inside its parent membership. The
 procedure is deterministic and does not depend on the input file order:

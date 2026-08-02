@@ -7,6 +7,8 @@ source "$CLOUD_DIR/common.sh"
 
 MODE="${1:-}"
 PERSISTENT_SIF_DIR="${PERSISTENT_SIF_DIR:-$CLOUD_PERSISTENT_ROOT/sifs}"
+RCLONE_BIN="${RCLONE_BIN:-rclone}"
+SIF_SYNC_TRANSFERS="${SIF_SYNC_TRANSFERS:-50}"
 
 case "$MODE" in
   persist)
@@ -23,7 +25,8 @@ case "$MODE" in
     ;;
 esac
 
-require_command rsync "Install rsync before syncing SIFs."
+require_command "$RCLONE_BIN" "Install rclone before syncing SIFs."
+require_positive_integer SIF_SYNC_TRANSFERS "$SIF_SYNC_TRANSFERS"
 if [[ ! -d "$source_dir" ]]; then
   echo "SIF source directory does not exist: $source_dir" >&2
   exit 2
@@ -37,7 +40,11 @@ mkdir -p "$destination_dir"
 echo "Syncing SIFs ($MODE):"
 echo "  source:      $source_dir/"
 echo "  destination: $destination_dir/"
-rsync -a --progress "$source_dir/" "$destination_dir/"
+echo "  transfers:   $SIF_SYNC_TRANSFERS"
+"$RCLONE_BIN" copy "$source_dir" "$destination_dir" \
+  --transfers "$SIF_SYNC_TRANSFERS" \
+  --checkers "$SIF_SYNC_TRANSFERS" \
+  --progress
 
 sif_count="$(find "$destination_dir" -type f -name '*.sif' -print | wc -l | tr -d '[:space:]')"
 echo "SIF sync complete: $sif_count files in $destination_dir"

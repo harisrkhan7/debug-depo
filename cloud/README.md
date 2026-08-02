@@ -140,9 +140,9 @@ CACHE_BUILD_MAX_WORKERS=40 MIN_FULL_CACHE_FREE_GIB=1200 \
   bash cloud/run.sh build-cache full
 ```
 
-Before terminating a VM, copy the complete SIF tree to durable storage. Restore
-it before `setup` on a replacement VM when `rsync` is already available; this
-lets `setup` reuse the restored vLLM image.
+Before terminating a VM, copy the complete SIF tree to durable storage. The
+setup command installs `rclone`; install it first and restore before full setup
+on a replacement VM if you want setup to reuse the restored vLLM image.
 
 ```bash
 # VM-local sifs/ -> persistent sifs/
@@ -153,8 +153,13 @@ bash cloud/run.sh sifs restore
 ```
 
 These commands include SWE-bench, SWE-smith, vLLM, and future SIF
-subdirectories. The sync does not use `--delete` or remove source files.
-Override the durable location with `PERSISTENT_SIF_DIR`.
+subdirectories. They use 50 parallel transfers by default and do not delete or
+remove source files. Override concurrency with `SIF_SYNC_TRANSFERS` and the
+durable location with `PERSISTENT_SIF_DIR`:
+
+```bash
+SIF_SYNC_TRANSFERS=12 bash cloud/run.sh sifs persist
+```
 
 The vLLM SIF contains the serving runtime, not the AgentForge model weights.
 By default, weights remain in the disposable Hugging Face cache and must be

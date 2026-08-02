@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Pull the complete persistent Cloud scratch tree for local inspection.
-# Rebuildable caches, SIFs, and temporary files are intentionally outside it.
+# SIF backups, rebuildable caches, and temporary files are outside scratch.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 if [[ -f "$ROOT_DIR/cloud/local.env" ]]; then
@@ -60,7 +60,8 @@ Pulling the complete cloud scratch tree:
 
 This includes runs, trajectories, merged predictions, evaluations, analyses,
 training checkpoints/models, cache-build summaries, and logs. It does not copy
-the ephemeral caches, SIFs, runtime state, or temporary files.
+the sibling persistent sifs/ directory, ephemeral caches, runtime state, or
+temporary files.
 MSG
 
 "$RSYNC_BIN" "${rsync_args[@]}" \

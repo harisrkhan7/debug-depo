@@ -42,74 +42,10 @@ def test_build_evaluation_command_includes_empty_namespace_for_local_builds():
     namespace_index = command.index("--namespace")
     assert command[namespace_index + 1] == ""
     assert command[-3:] == ["--instance_ids", "a", "b"]
-
-
-def test_summarize_report_compares_full_verified_target():
-    summary = summarize_report(
-        {
-            "total_instances": 500,
-            "submitted_instances": 500,
-            "completed_instances": 500,
-            "resolved_instances": 191,
-            "unresolved_instances": 309,
-            "empty_patch_instances": 0,
-            "error_instances": 0,
-        }
-    )
-
-    assert summary["resolution_rate"] == 191 / 500
-    assert summary["target_name"] == "klear-agentforge-8b-sft-swe-bench-verified"
-    assert summary["resolved_delta_vs_target"] == 0
     assert model_report_name("org/model", "run") == "org__model.run.json"
 
 
-def test_summarize_report_omits_verified_target_for_other_evaluation_setups():
-    report = {
-        "total_instances": 100,
-        "submitted_instances": 100,
-        "completed_instances": 100,
-        "resolved_instances": 40,
-        "unresolved_instances": 60,
-        "empty_patch_instances": 0,
-        "error_instances": 0,
-    }
-
-    summary = summarize_report(
-        report,
-        dataset="SWE-bench/SWE-smith-py",
-        split="validation",
-        model="org/trained-model",
-    )
-
-    assert summary["dataset"] == "SWE-bench/SWE-smith-py"
-    assert summary["split"] == "validation"
-    assert summary["model"] == "org/trained-model"
-    assert summary["resolution_rate"] == 0.4
-    assert summary["target_name"] is None
-    assert summary["target_score"] is None
-    assert summary["target_resolved"] is None
-    assert summary["target_total"] is None
-    assert summary["resolved_delta_vs_target"] is None
-
-
-def test_summarize_report_omits_full_target_for_verified_subset():
-    summary = summarize_report(
-        {
-            "total_instances": 500,
-            "submitted_instances": 5,
-            "completed_instances": 5,
-            "resolved_instances": 2,
-            "unresolved_instances": 3,
-            "empty_patch_instances": 0,
-            "error_instances": 0,
-        }
-    )
-
-    assert summary["target_name"] is None
-    assert summary["resolved_delta_vs_target"] is None
-
-
-def test_summarize_report_target_requires_matching_dataset_split_and_model():
+def test_verified_target_requires_the_exact_full_evaluation():
     report = {
         "total_instances": 500,
         "submitted_instances": 500,
@@ -120,13 +56,20 @@ def test_summarize_report_target_requires_matching_dataset_split_and_model():
         "error_instances": 0,
     }
 
-    for overrides in (
-        {"dataset": "org/other-dataset"},
-        {"dataset_revision": "different-revision"},
-        {"split": "validation"},
-        {"model": "org/other-model"},
-    ):
-        summary = summarize_report(report, **overrides)
+    matching = summarize_report(report)
+    assert matching["resolution_rate"] == 191 / 500
+    assert matching["target_name"] == "klear-agentforge-8b-sft-swe-bench-verified"
+    assert matching["resolved_delta_vs_target"] == 0
+
+    mismatches = (
+        (report, {"dataset": "org/other-dataset"}),
+        (report, {"dataset_revision": "different-revision"}),
+        (report, {"split": "validation"}),
+        (report, {"model": "org/other-model"}),
+        ({**report, "submitted_instances": 5, "completed_instances": 5}, {}),
+    )
+    for candidate_report, overrides in mismatches:
+        summary = summarize_report(candidate_report, **overrides)
         assert summary["target_name"] is None
         assert summary["resolved_delta_vs_target"] is None
 

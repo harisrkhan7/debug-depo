@@ -1,9 +1,9 @@
-# HyperStack runner
+# Lambda Cloud runner
 
-This directory provides the same high-level workflows as `cluster/`, but runs
-them directly on one HyperStack GPU VM rather than submitting PBS jobs. At
-startup the scripts query `nvidia-smi`, use every reported GPU, and create one
-collection shard per GPU.
+This directory runs the same high-level workflows as `cluster/` directly on a
+single Lambda Cloud GPU VM. At startup the scripts query `nvidia-smi`, use every
+reported GPU, and create one collection shard and one private vLLM server per
+GPU. Four- and eight-GPU hosts use the same commands.
 
 The tracked defaults target:
 
@@ -17,24 +17,29 @@ The tracked defaults target:
 | Preference-training processes | One per detected GPU |
 | Evaluation workers | 80 |
 
-## Storage and hibernation
+## Storage
 
-The standard HyperStack H100 SXM5 x8 flavor separates a 100 GB persistent root
-disk from the 32 TB ephemeral disk. HyperStack clears the ephemeral disk when
-the VM is hibernated or deleted. The root disk survives hibernation, but is
-deleted with the VM.
+Attach a Lambda filesystem named `debug-depo` while launching the instance.
+Lambda mounts it at `/lambda/nfs/debug-depo`; it cannot be attached after the
+instance has launched. Durable experiment artifacts live there. Rebuildable
+caches and SIFs use the instance's large local root volume, which is destroyed
+when the instance is terminated.
+
+Filesystem mount paths are case-sensitive. If the filesystem is named
+`Debug-Depo`, override both `CLOUD_PERSISTENT_ROOT` and
+`CLOUD_REMOTE_PERSISTENT_ROOT` with paths beginning `/lambda/nfs/Debug-Depo`.
 
 The scripts deliberately split rebuildable working data from durable experiment
 artifacts:
 
 ```text
-/root/debug-depo-persistent/
+/lambda/nfs/debug-depo/debug-depo-persistent/
   scratch/
     cache-builds/
     runs/
   tools/
 
-/ephemeral/debug-depo/
+/home/ubuntu/debug-depo-ephemeral/
   cache/
     apptainer/
     huggingface/
@@ -51,68 +56,59 @@ artifacts:
 ```
 
 The persistent tree holds trajectories, predictions, evaluation reports,
-analyses, checkpoints, and packaged models. The ephemeral tree holds
+analyses, checkpoints, and packaged models. The local tree holds
 rebuildable model/package caches, Apptainer OCI caches, all SIFs, runtime state,
 and temporary files. A run directory under
-`/root/debug-depo-persistent/scratch/runs/<run-name>/` contains its rollouts or
+`CLOUD_PERSISTENT_ROOT/scratch/runs/<run-name>/` contains its rollouts or
 collection, merged predictions, evaluation, analysis, preference data,
 checkpoints, and packaged models.
 
-HyperStack mounts the flavor's temporary disk at `/ephemeral` by default. Set
-`HYPERSTACK_EPHEMERAL_ROOT` only if the VM was provisioned with a custom
-ephemeral mount. Its contents must be rebuilt after hibernation or deletion.
-Do not put `DEBUG_DEPO_SCRATCH` there because run artifacts must survive.
-
-For full runs, create a sufficiently large HyperStack Shared Storage Volume
-(SSV), attach it, and mount it at `/root/debug-depo-persistent`. This keeps the
-run-directory layout on storage that survives VM deletion and reattachment,
-while the large rebuildable image cache uses local ephemeral capacity.
-
-After attaching a new empty SSV, identify its stable `/dev/disk/by-id/...`
-device. The preparation command refuses to format anything unless the device
-has no filesystem and `FORMAT_EMPTY_DEVICE=1` is explicit:
+Verify that durable and rebuildable paths resolve to separate filesystems:
 
 ```bash
-ls -l /dev/disk/by-id/
-
-FORMAT_EMPTY_DEVICE=1 \
-  sudo bash hyperstack/prepare_volume.sh \
-  /dev/disk/by-id/<attached-volume>
+bash cloud/run.sh storage
 ```
 
-For a volume that already has a filesystem, omit `FORMAT_EMPTY_DEVICE=1`. The
-script mounts it and records its UUID in `/etc/fstab`.
+The check is read-only. Do not format or manually mount Lambda storage; attach
+the filesystem in the Lambda console or launch API. `setup`, `preflight`, and
+full workflows also reject configurations that put durable runs and local
+caches on the same filesystem. Lambda filesystems mounted with the current
+`virtiofs` driver are accepted, as are legacy `nfs` and `nfs4` mounts.
 
-HyperStack storage references:
+Lambda references:
 
-- [VM storage and hibernation](https://docs.hyperstack.cloud/docs/virtual-machines/virtual-machine-features/)
-- [Hibernation behavior](https://docs.hyperstack.cloud/docs/virtual-machines/hibernation/)
-- [Creating a persistent volume](https://docs.hyperstack.cloud/docs/storage/volumes/creating-a-volume/)
+- [On-Demand Cloud overview](https://docs.lambda.ai/public-cloud/on-demand/)
+- [Filesystems](https://docs.lambda.ai/public-cloud/filesystems/)
+- [Connecting over SSH](https://docs.lambda.ai/public-cloud/on-demand/connecting-instance/)
 
 ## Initial setup
 
-Deploy an Ubuntu NVIDIA CUDA image, then clone the repository somewhere on the
-root disk (for example `/root/debug-depo`). A Docker daemon is not required:
-Apptainer runs vLLM, task environments, and evaluation environments.
+Use Lambda Stack 22.04 or GPU Base 22.04, attach the `debug-depo` filesystem,
+and connect as `ubuntu`. Lambda supplies the NVIDIA driver and CUDA stack.
+Apptainer runs vLLM, task environments, and evaluation environments; the
+workflow does not use the Docker daemon.
 
 ```bash
-cd /root/debug-depo
-cp hyperstack/local.env.example hyperstack/local.env
+cd /home/ubuntu/debug-depo
+cp cloud/local.env.example cloud/local.env
 
-bash hyperstack/run.sh setup
 bash cluster/save_hf_token.sh
-bash hyperstack/run.sh preflight
+bash cloud/run.sh setup
+bash cloud/run.sh storage
+bash cloud/run.sh preflight
 ```
 
 `setup` installs Apptainer from its official Ubuntu PPA, creates a persistent
 uv tool environment, installs the rollout/evaluation/training extras, installs
-the pinned mini-swe-agent-plus and SWE-smith checkouts, and converts the vLLM
-OCI image into an ephemeral SIF with `apptainer pull`. The NVIDIA driver is
-supplied by the selected HyperStack CUDA image.
+the pinned mini-swe-agent-plus and SWE-smith checkouts, converts the vLLM OCI
+image into a local SIF with `apptainer pull`, and serially downloads the gated
+AgentForge model into the shared local Hugging Face cache. Save the token before
+running setup. The default vLLM image is pinned to `v0.11.0` rather than
+following a moving `latest` tag.
 
 The Hugging Face token remains outside the repository at
-`/root/.config/debug-depo/hf_token`. Runs, model packages, and checkpoints
-remain under `HYPERSTACK_PERSISTENT_ROOT`; caches and SIFs are ephemeral.
+`$HOME/.config/debug-depo/hf_token`. Runs, model packages, and checkpoints
+remain under `CLOUD_PERSISTENT_ROOT`; caches and SIFs stay on local VM storage.
 
 Run long commands inside `tmux` so an SSH disconnect does not terminate the
 foreground controller:
@@ -121,58 +117,70 @@ foreground controller:
 tmux new -s debug-depo
 ```
 
-## Copying the checkout to and from HyperStack
+## Copying the checkout to and from Lambda Cloud
 
 On the local machine, define an SSH alias for the VM:
 
 ```sshconfig
-Host debug-depo-hyperstack
-  HostName <hyperstack-public-ip>
-  User root
+Host debug-depo-cloud
+  HostName <lambda-instance-ip>
+  User ubuntu
   IdentityFile ~/.ssh/<private-key>
 ```
 
 Then copy the example configuration and preview the upload:
 
 ```bash
-cp hyperstack/local.env.example hyperstack/local.env
-DRY_RUN=1 bash hyperstack/run.sh push
-bash hyperstack/run.sh push
+cp cloud/local.env.example cloud/local.env
+DRY_RUN=1 bash cloud/run.sh push
+bash cloud/run.sh push
 ```
 
 `push` mirrors the behavior of `cluster/sync_to_cx3.sh`. It sends the checkout
-to `/root/debug-depo` by default, but excludes Git metadata, virtual
+to `/home/ubuntu/debug-depo` by default, but excludes Git metadata, virtual
 environments, caches, results, scratch data, external checkouts, and the
-machine-local `hyperstack/local.env`. Existing remote-only files are preserved
+machine-local `cloud/local.env`. Existing remote-only files are preserved
 unless `DELETE=1` is explicitly set.
+
+Because `cloud/local.env` is intentionally excluded, create it separately on
+the Lambda VM after the first push. The tracked example already contains the
+standard Lambda paths. Legacy `HYPERSTACK_*` overrides remain accepted for old
+automation, but new configuration should use `CLOUD_*` names.
 
 After a run, preview and then pull the entire persistent scratch tree:
 
 ```bash
-DRY_RUN=1 bash hyperstack/run.sh pull
-bash hyperstack/run.sh pull
+DRY_RUN=1 bash cloud/run.sh pull
+bash cloud/run.sh pull
 ```
 
-The local result is `scratch/hyperstack/`. It includes cache-build summaries,
+The local result is `scratch/cloud/`. It includes cache-build summaries,
 runs, trajectories, merged predictions, evaluation reports, analyses, logs,
 checkpoints, and packaged models. Rebuildable caches, SIFs, runtime state, and
 temporary files are not copied. Each successful pull records its source in
-`scratch/hyperstack/_pull_manifest.txt`. Set
-`LOCAL_HYPERSTACK_SCRATCH_DIR` to override the local destination.
+`scratch/cloud/_pull_manifest.txt`. Set
+`LOCAL_CLOUD_SCRATCH_DIR` to override the local destination.
 
 ## Cache
+
+Setup normally prefetches the model once before any GPU shards start. Retry
+only that step, for example after a transient Hugging Face failure, with:
+
+```bash
+bash cloud/run.sh prefetch-model
+```
 
 Start with a two-image smoke build:
 
 ```bash
-bash hyperstack/run.sh build-cache smoke
+bash cloud/run.sh build-cache smoke
 ```
 
 Build the complete Verified cache plus the union of the tracked 5,000 training
 and 500 validation SWE-smith tasks:
 
 ```bash
-bash hyperstack/run.sh build-cache full
+bash cloud/run.sh build-cache full
 ```
 
 The full command uses 50 concurrent pulls by default, disables Apptainer's
@@ -184,14 +192,14 @@ after measuring:
 
 ```bash
 CACHE_BUILD_MAX_WORKERS=50 \
-  bash hyperstack/run.sh build-cache full
+  bash cloud/run.sh build-cache full
 ```
 
-Completed SIFs are reused until ephemeral storage is cleared. The full build
-has a conservative 1,000 GiB free-space guard on the ephemeral cache
+Completed SIFs are reused until local VM storage is cleared. The full build
+has a conservative 1,000 GiB free-space guard on the local cache
 filesystem; set `MIN_FULL_CACHE_FREE_GIB` higher for your flavor sizing.
 Collections of 100 or more tasks also check for 500 GiB free by default; the
-initial 1,000-task Hyperstack run therefore requires 500 GiB free. A 5,000-task
+initial 1,000-task cloud run therefore requires 500 GiB free. A 5,000-task
 override checks for 1,000 GiB. These are early safety floors, not estimates of
 final disk usage.
 
@@ -202,10 +210,10 @@ evaluation, and analysis without committing to a full run:
 
 ```bash
 # One Verified task per detected GPU/shard.
-bash hyperstack/run.sh smoke verified
+bash cloud/run.sh smoke verified
 
 # One SWE-smith task per GPU/shard, sampled once at 0.6 and once at 0.7.
-bash hyperstack/run.sh smoke swesmith
+bash cloud/run.sh smoke swesmith
 ```
 
 Both use every detected GPU, one shard and one smoke task per GPU, the
@@ -216,8 +224,8 @@ need to download task images that were not covered by `build-cache smoke`.
 Preview either smoke without starting vLLM or Apptainer:
 
 ```bash
-DRY_RUN=1 bash hyperstack/run.sh smoke verified
-DRY_RUN=1 bash hyperstack/run.sh smoke swesmith
+DRY_RUN=1 bash cloud/run.sh smoke verified
+DRY_RUN=1 bash cloud/run.sh smoke swesmith
 ```
 
 Override `RUN_NAME`, `EXPECTED_TASKS`, `MAX_STEPS`, or the timeouts when a
@@ -229,15 +237,15 @@ the detected GPU count because every collection shard must receive work.
 Preview commands without starting servers:
 
 ```bash
-DRY_RUN=1 bash hyperstack/run.sh pipeline verified
-DRY_RUN=1 bash hyperstack/run.sh pipeline swesmith
+DRY_RUN=1 bash cloud/run.sh pipeline verified
+DRY_RUN=1 bash cloud/run.sh pipeline swesmith
 ```
 
 Run SWE-bench Verified collection, evaluation, and analysis:
 
 ```bash
 RUN_NAME=agentforge-verified-h100 \
-  bash hyperstack/run.sh pipeline verified
+  bash cloud/run.sh pipeline verified
 ```
 
 Run the initial 1,000-task SWE-smith training collection. This creates eight
@@ -246,29 +254,43 @@ trajectories in total, evaluates all sample slots, and analyzes the result:
 
 ```bash
 RUN_NAME=swesmith-train-1000 \
-  bash hyperstack/run.sh pipeline swesmith
+  bash cloud/run.sh pipeline swesmith
 ```
 
 Each collection uses every detected GPU. Every GPU owns one shard, one private
 vLLM server, and 8 trajectory workers. vLLM and mini-swe task environments both
-run through Apptainer and reuse the ephemeral SIF cache.
+run through Apptainer and reuse the local SIF cache.
 
 Stages may also be run or resumed separately:
 
 ```bash
 RUN_NAME=agentforge-verified-h100 \
-  bash hyperstack/run.sh collect verified
+  bash cloud/run.sh collect verified
 
 RUN_NAME=agentforge-verified-h100 \
-  bash hyperstack/run.sh evaluate verified
+  bash cloud/run.sh evaluate verified
 
 RUN_NAME=agentforge-verified-h100 \
-  bash hyperstack/run.sh analyze verified
+  bash cloud/run.sh analyze verified
 ```
 
 Rerunning collection with the same compatible configuration reuses completed
 trajectories and retries infrastructure failures. Use a new `RUN_NAME` when
 changing data, model, or result-affecting settings.
+
+Run the complete reduced SFT trajectory sequence—1,000 training tasks with two
+rollouts at each of temperatures 0.6 and 0.7, followed by deterministic
+validation on the fixed 100-, 200-, and 500-task budgets—with one command:
+
+```bash
+TRAIN_RUN_NAME=swesmith-train-1000-r2 \
+  bash cloud/run.sh trajectory-suite
+```
+
+The stages run sequentially. If one fails, the wrapper records the failure and
+continues with the remaining validation budgets, then exits non-zero after all
+stages have been attempted. Evaluation uses 100 workers by default. Run the
+command inside `tmux`; a compatible rerun resumes completed collection work.
 
 ## DMPO and DEPO
 
@@ -277,10 +299,10 @@ training run has been evaluated:
 
 ```bash
 RUN_NAME=swesmith-train-1000 \
-  bash hyperstack/run.sh preference-data
+  bash cloud/run.sh preference-data
 
 RUN_NAME=swesmith-train-1000 \
-  bash hyperstack/run.sh validate-data
+  bash cloud/run.sh validate-data
 ```
 
 Train and package DMPO on all detected GPUs:
@@ -289,7 +311,7 @@ Train and package DMPO on all detected GPUs:
 RUN_NAME=swesmith-train-1000 \
 EXPERIMENT_ARM=dmpo \
 DMPO_TRIAL_NAME=gamma07 \
-  bash hyperstack/run.sh dmpo
+  bash cloud/run.sh dmpo
 ```
 
 Train DEPO from the selected packaged DMPO model:
@@ -299,7 +321,7 @@ RUN_NAME=swesmith-train-1000 \
 EXPERIMENT_ARM=dmpo-depo \
 DMPO_TRIAL_NAME=gamma07 \
 DEPO_TRIAL_NAME=alpha2 \
-  bash hyperstack/run.sh depo
+  bash cloud/run.sh depo
 ```
 
 The complete default data → DMPO → DEPO sequence is:
@@ -309,7 +331,7 @@ RUN_NAME=swesmith-train-1000 \
 EXPERIMENT_ARM=dmpo-depo \
 DMPO_TRIAL_NAME=gamma07 \
 DEPO_TRIAL_NAME=alpha2 \
-  bash hyperstack/run.sh train
+  bash cloud/run.sh train
 ```
 
 All training commands default `NUM_PROCESSES` to the detected GPU count, so
@@ -331,7 +353,7 @@ DEPO_BETA=0.2 \
 ALPHA_TOKENS=2 \
 ALPHA_STEPS=2 \
 DEPO_TOKEN_METRIC=completion_tokens \
-  bash hyperstack/run.sh train
+  bash cloud/run.sh train
 ```
 
 Shared overrides include `MAX_LENGTH`, `MAX_TRAIN_ROWS`,
@@ -342,12 +364,28 @@ separate checkpoints, manifests, packages, and evaluation paths.
 
 ## Validation
 
-Run the repository-disjoint 500-task SWE-smith validation pipeline with the
-same one-shard-per-GPU, eight-worker-per-shard layout:
+`validate` evaluates one model on an explicit SWE-smith task-ID file. It runs
+each task exactly once at temperature 0, then scores and analyzes the complete
+task matrix. It does not choose a validation membership implicitly. Give every
+model and budget a distinct `RUN_NAME`; `EXPECTED_TASKS` is inferred from the
+non-empty lines in `TASK_IDS_FILE` and is checked when supplied explicitly.
+
+Evaluate a packaged DMPO model on the 100-task screening budget:
 
 ```bash
-bash hyperstack/run.sh validate
+TRAIN_RUN_NAME=swesmith-train-1000-r2
+TRIAL_NAME=g07-lr1e6-b01-ga16
+
+RUN_NAME="validation-100-dmpo-$TRIAL_NAME" \
+TASK_IDS_FILE=data/splits/swesmith_validation_100_instance_ids.txt \
+MODEL_PATH="$CLOUD_PERSISTENT_ROOT/scratch/runs/$TRAIN_RUN_NAME/experiments/dmpo/$TRIAL_NAME/model" \
+  bash cloud/run.sh validate
 ```
+
+Use `AGENTFORGE_MODEL=Kwai-Klear/Klear-AgentForge-8B-SFT` instead of
+`MODEL_PATH` to evaluate the SFT baseline. For 200 or 500 tasks, supply the
+corresponding task-ID file and a new run name. `CONTEXT_LENGTH` defaults to
+32,768 and `MAX_STEPS` to 200 for validation.
 
 Evaluate a packaged DMPO or DEPO model on the 500-task SWE-bench Verified set:
 
@@ -355,27 +393,27 @@ Evaluate a packaged DMPO or DEPO model on the 500-task SWE-bench Verified set:
 TRAIN_RUN_NAME=swesmith-train-1000 \
 EXPERIMENT_ARM=dmpo \
 DMPO_TRIAL_NAME=gamma07 \
-  bash hyperstack/run.sh validate-model dmpo
+  bash cloud/run.sh validate-model dmpo
 
 TRAIN_RUN_NAME=swesmith-train-1000 \
 EXPERIMENT_ARM=dmpo-depo \
 DMPO_TRIAL_NAME=gamma07 \
 DEPO_TRIAL_NAME=alpha2 \
-  bash hyperstack/run.sh validate-model depo
+  bash cloud/run.sh validate-model depo
 ```
 
 ## Useful overrides
 
-Put stable machine-specific overrides in ignored `hyperstack/local.env`.
+Put stable machine-specific overrides in ignored `cloud/local.env`.
 One-off experiment settings can be placed before a command:
 
 ```bash
 RUN_NAME=verified-smoke-longer MAX_STEPS=40 \
-  bash hyperstack/run.sh smoke verified
+  bash cloud/run.sh smoke verified
 
 VLLM_APPTAINER_SOURCE=docker://vllm/vllm-openai:<tested-version> \
 VLLM_GPU_MEMORY_UTILIZATION=0.85 \
-  bash hyperstack/run.sh collect verified
+  bash cloud/run.sh collect verified
 ```
 
 `GPU_IDS` defaults to the indices reported by `nvidia-smi`; `NUM_SHARDS` and

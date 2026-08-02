@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HYPERSTACK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLOUD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$HYPERSTACK_DIR/common.sh"
+source "$CLOUD_DIR/common.sh"
 
 ACTION="${1:-all}"
 case "$ACTION" in
   data|dmpo|depo|all|validate-data) ;;
   *)
-    echo "Usage: bash hyperstack/preference.sh data|dmpo|depo|all|validate-data" >&2
+    echo "Usage: bash cloud/preference.sh data|dmpo|depo|all|validate-data" >&2
     exit 2
     ;;
 esac

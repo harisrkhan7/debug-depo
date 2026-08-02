@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HYPERSTACK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLOUD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$HYPERSTACK_DIR/common.sh"
+source "$CLOUD_DIR/common.sh"
 
 require_command findmnt
 require_separate_storage
@@ -31,7 +31,7 @@ if [[ "${INSTALL_SYSTEM_PACKAGES:-1}" == "1" ]]; then
 fi
 
 if ! command -v nvidia-smi >/dev/null 2>&1; then
-  echo "nvidia-smi is missing. Use a HyperStack NVIDIA CUDA image." >&2
+  echo "nvidia-smi is missing. Use a Lambda Stack or GPU Base image." >&2
   exit 127
 fi
 if ! command -v apptainer >/dev/null 2>&1; then
@@ -39,7 +39,7 @@ if ! command -v apptainer >/dev/null 2>&1; then
   exit 127
 fi
 
-tool_venv="$HYPERSTACK_PERSISTENT_ROOT/tools/uv-venv"
+tool_venv="$CLOUD_PERSISTENT_ROOT/tools/uv-venv"
 python3 -m venv "$tool_venv"
 "$tool_venv/bin/python" -m pip install --upgrade pip uv
 
@@ -72,6 +72,10 @@ MSG
   temporary_vllm_image=""
 fi
 
+# Populate the shared Hugging Face cache before any all-GPU workflow starts.
+# This avoids every vLLM shard racing to download the same model.
+bash "$CLOUD_DIR/prefetch_model.sh"
+
 PYTHONPATH="$DEBUG_DEPO_ROOT/src:$DEBUG_DEPO_ROOT/external/mini-swe-agent-plus/src:$DEBUG_DEPO_ROOT/external/SWE-smith" \
   "$UV" run python - <<'PY'
 import importlib.util
@@ -80,7 +84,7 @@ required = ("accelerate", "debug_depo", "minisweagent", "peft", "swebench", "swe
 missing = [name for name in required if importlib.util.find_spec(name) is None]
 if missing:
     raise SystemExit(f"Missing after setup: {', '.join(missing)}")
-print("HyperStack Python environment is ready.")
+print("Lambda Cloud Python environment is ready.")
 PY
 
 cat <<MSG
@@ -91,9 +95,9 @@ Setup complete.
   Ephemeral SIFs:     $(dirname "$VLLM_IMAGE")
 
 Next:
-  1. Store the gated model token with: bash cluster/save_hf_token.sh
-  2. Run: bash hyperstack/preflight.sh
-  3. Preview: DRY_RUN=1 bash hyperstack/run.sh pipeline verified
+  1. Verify storage: bash cloud/run.sh storage
+  2. Run: bash cloud/run.sh preflight
+  3. Preview: DRY_RUN=1 bash cloud/run.sh pipeline verified
 
 Apptainer runs both vLLM and the task/evaluation environments. No Docker daemon
 is required.

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 
-HYPERSTACK_COMMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLOUD_COMMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$HYPERSTACK_COMMON_DIR/env.sh"
+source "$CLOUD_COMMON_DIR/env.sh"
 
 require_command() {
   local command_name="$1"
-  local setup_hint="${2:-Run bash hyperstack/setup.sh first.}"
+  local setup_hint="${2:-Run bash cloud/setup.sh first.}"
   if ! command -v "$command_name" >/dev/null 2>&1; then
     echo "Required command is unavailable: $command_name" >&2
     echo "$setup_hint" >&2
@@ -31,16 +31,24 @@ require_run_name() {
   fi
 }
 
+is_lambda_persistent_fstype() {
+  case "$1" in
+    nfs|nfs4|virtiofs) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 gpu_id_array() {
   local normalized="${GPU_IDS//,/ }"
-  read -r -a HYPERSTACK_GPU_ID_ARRAY <<<"$normalized"
-  if ((${#HYPERSTACK_GPU_ID_ARRAY[@]} != NUM_SHARDS)); then
-    echo "GPU_IDS contains ${#HYPERSTACK_GPU_ID_ARRAY[@]} IDs but NUM_SHARDS=$NUM_SHARDS." >&2
+  read -r -a CLOUD_GPU_ID_ARRAY <<<"$normalized"
+  HYPERSTACK_GPU_ID_ARRAY=("${CLOUD_GPU_ID_ARRAY[@]}")
+  if ((${#CLOUD_GPU_ID_ARRAY[@]} != NUM_SHARDS)); then
+    echo "GPU_IDS contains ${#CLOUD_GPU_ID_ARRAY[@]} IDs but NUM_SHARDS=$NUM_SHARDS." >&2
     return 2
   fi
   local gpu_id
   local seen_gpu_ids=" "
-  for gpu_id in "${HYPERSTACK_GPU_ID_ARRAY[@]}"; do
+  for gpu_id in "${CLOUD_GPU_ID_ARRAY[@]}"; do
     if [[ ! "$gpu_id" =~ ^[0-9]+$ ]]; then
       echo "GPU_IDS must contain non-negative integers, got: $gpu_id" >&2
       return 2
@@ -55,12 +63,12 @@ gpu_id_array() {
 
 require_project_environment() {
   if [[ ! -x "$UV" ]]; then
-    echo "uv is missing at $UV. Run bash hyperstack/setup.sh first." >&2
+    echo "uv is missing at $UV. Run bash cloud/setup.sh first." >&2
     return 127
   fi
   if [[ ! -x "$DEBUG_DEPO_ROOT/.venv/bin/python" ]]; then
     echo "Project environment is missing at $DEBUG_DEPO_ROOT/.venv." >&2
-    echo "Run bash hyperstack/setup.sh first." >&2
+    echo "Run bash cloud/setup.sh first." >&2
     return 127
   fi
 }
@@ -74,25 +82,36 @@ require_separate_storage() {
   local -a persistent_paths
   local -a ephemeral_paths
 
-  persistent_device="$(findmnt -n -o MAJ:MIN -T "$HYPERSTACK_PERSISTENT_ROOT" 2>/dev/null || true)"
-  ephemeral_device="$(findmnt -n -o MAJ:MIN -T "$HYPERSTACK_EPHEMERAL_ROOT" 2>/dev/null || true)"
+  persistent_device="$(findmnt -n -o MAJ:MIN -T "$CLOUD_PERSISTENT_ROOT" 2>/dev/null || true)"
+  ephemeral_device="$(findmnt -n -o MAJ:MIN -T "$CLOUD_EPHEMERAL_ROOT" 2>/dev/null || true)"
   if [[ -z "$persistent_device" || -z "$ephemeral_device" ]]; then
     echo "Could not resolve the persistent and ephemeral filesystems." >&2
     return 2
   fi
   if [[ "$persistent_device" == "$ephemeral_device" ]]; then
     echo "Persistent and ephemeral roots resolve to the same filesystem:" >&2
-    echo "  persistent: $HYPERSTACK_PERSISTENT_ROOT" >&2
-    echo "  ephemeral:  $HYPERSTACK_EPHEMERAL_ROOT" >&2
-    echo "Mount HyperStack ephemeral storage at /ephemeral or override HYPERSTACK_EPHEMERAL_ROOT." >&2
+    echo "  persistent: $CLOUD_PERSISTENT_ROOT" >&2
+    echo "  ephemeral:  $CLOUD_EPHEMERAL_ROOT" >&2
+    echo "Attach a Lambda filesystem for durable artifacts and keep CLOUD_EPHEMERAL_ROOT on the local root volume." >&2
     return 2
+  fi
+
+  if [[ "$CLOUD_PERSISTENT_ROOT" == /lambda/nfs/* ]]; then
+    local persistent_type
+    persistent_type="$(findmnt -n -o FSTYPE -T "$CLOUD_PERSISTENT_ROOT" 2>/dev/null || true)"
+    if ! is_lambda_persistent_fstype "$persistent_type"; then
+      echo "Lambda persistent root is not backed by an attached Lambda filesystem: $CLOUD_PERSISTENT_ROOT" >&2
+      echo "Detected filesystem type: ${persistent_type:-unknown}" >&2
+      echo "Attach the Lambda filesystem when launching the instance." >&2
+      return 2
+    fi
   fi
 
   persistent_paths=("$DEBUG_DEPO_SCRATCH")
   for path in "${persistent_paths[@]}"; do
     path_device="$(findmnt -n -o MAJ:MIN -T "$path" 2>/dev/null || true)"
     if [[ "$path_device" != "$persistent_device" ]]; then
-      echo "Persistent artifact path is not on $HYPERSTACK_PERSISTENT_ROOT: $path" >&2
+      echo "Persistent artifact path is not on $CLOUD_PERSISTENT_ROOT: $path" >&2
       return 2
     fi
   done
@@ -100,7 +119,7 @@ require_separate_storage() {
   ephemeral_paths=(
     "$DEBUG_DEPO_EPHEMERAL"
     "$DEBUG_DEPO_CACHE_ROOT"
-    "$HYPERSTACK_RUNTIME_DIR"
+    "$CLOUD_RUNTIME_DIR"
     "$HF_HOME"
     "$HF_HUB_CACHE"
     "$XDG_CACHE_HOME"
@@ -117,7 +136,7 @@ require_separate_storage() {
   for path in "${ephemeral_paths[@]}"; do
     path_device="$(findmnt -n -o MAJ:MIN -T "$path" 2>/dev/null || true)"
     if [[ "$path_device" != "$ephemeral_device" ]]; then
-      echo "Rebuildable cache/SIF path is not on $HYPERSTACK_EPHEMERAL_ROOT: $path" >&2
+      echo "Rebuildable cache/SIF path is not on $CLOUD_EPHEMERAL_ROOT: $path" >&2
       return 2
     fi
   done
@@ -125,7 +144,7 @@ require_separate_storage() {
   vllm_image_device="$(findmnt -n -o MAJ:MIN -T "$(dirname "$VLLM_IMAGE")" 2>/dev/null || true)"
   if [[ "$vllm_image_device" != "$persistent_device" && \
     "$vllm_image_device" != "$ephemeral_device" ]]; then
-    echo "VLLM_IMAGE must be on persistent or ephemeral HyperStack storage: $VLLM_IMAGE" >&2
+    echo "VLLM_IMAGE must be on configured persistent or local VM storage: $VLLM_IMAGE" >&2
     return 2
   fi
 }
@@ -153,4 +172,4 @@ available_gib() {
   df -Pk "$1" | awk 'NR == 2 {print int($4 / 1024 / 1024)}'
 }
 
-unset HYPERSTACK_COMMON_DIR
+unset CLOUD_COMMON_DIR

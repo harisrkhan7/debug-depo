@@ -306,7 +306,9 @@ cluster/env/*
 !cluster/env/load.sh
 !cluster/env/*.example
 
-# Track portable HyperStack configuration, but keep machine-specific overrides local.
+# Track portable cloud configuration, but keep machine-specific overrides local.
+cloud/local.env
+# Retain the former path in case an older checkout is overlaid locally.
 hyperstack/local.env
 
 # Generated evaluation reports can contain absolute machine paths.

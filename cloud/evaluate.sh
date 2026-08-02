@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HYPERSTACK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLOUD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$HYPERSTACK_DIR/common.sh"
+source "$CLOUD_DIR/common.sh"
 
 FAMILY="${1:-verified}"
 case "$FAMILY" in
   verified)
-    RUN_NAME="${RUN_NAME:-agentforge-verified-hyperstack}"
+    RUN_NAME="${RUN_NAME:-agentforge-verified-cloud}"
     EXPECTED_TASKS="${EXPECTED_TASKS:-500}"
     DATASET="${DATASET:-princeton-nlp/SWE-bench_Verified}"
     SPLIT="${SPLIT:-test}"
@@ -21,7 +21,7 @@ case "$FAMILY" in
     TASK_IDS_FILE="${TASK_IDS_FILE:-data/splits/swesmith_train_1000_instance_ids.txt}"
     ;;
   *)
-    echo "Usage: bash hyperstack/evaluate.sh verified|swesmith" >&2
+    echo "Usage: bash cloud/evaluate.sh verified|swesmith" >&2
     exit 2
     ;;
 esac
@@ -31,7 +31,7 @@ require_positive_integer NUM_SHARDS "$NUM_SHARDS"
 require_positive_integer EXPECTED_TASKS "$EXPECTED_TASKS"
 require_positive_integer EVAL_MAX_WORKERS "$EVAL_MAX_WORKERS"
 if [[ "${SWESMITH_EVAL_RUNTIME:-apptainer}" != "apptainer" ]]; then
-  echo "HyperStack requires SWESMITH_EVAL_RUNTIME=apptainer." >&2
+  echo "Cloud requires SWESMITH_EVAL_RUNTIME=apptainer." >&2
   exit 2
 fi
 export SWESMITH_EVAL_RUNTIME=apptainer
@@ -41,7 +41,7 @@ EVALUATION_TASK_IDS_FILE="${EVALUATION_TASK_IDS_FILE-$TASK_IDS_FILE}"
 AGENTFORGE_MODEL="${AGENTFORGE_MODEL:-Kwai-Klear/Klear-AgentForge-8B-SFT}"
 
 cat <<MSG
-HyperStack $FAMILY evaluation
+Cloud $FAMILY evaluation
   run:             $RUN_NAME
   run root:        $RUN_ROOT
   expected tasks:  $EXPECTED_TASKS

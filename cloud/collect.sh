@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HYPERSTACK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLOUD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$HYPERSTACK_DIR/common.sh"
+source "$CLOUD_DIR/common.sh"
 
 FAMILY="${1:-verified}"
 case "$FAMILY" in
   verified)
-    RUN_NAME="${RUN_NAME:-agentforge-verified-hyperstack}"
+    RUN_NAME="${RUN_NAME:-agentforge-verified-cloud}"
     EXPECTED_TASKS="${EXPECTED_TASKS:-500}"
     DATASET="${DATASET:-princeton-nlp/SWE-bench_Verified}"
     SPLIT="${SPLIT:-test}"
@@ -22,7 +22,7 @@ case "$FAMILY" in
     TASK_IDS_FILE="${TASK_IDS_FILE:-data/splits/swesmith_train_1000_instance_ids.txt}"
     ;;
   *)
-    echo "Usage: bash hyperstack/collect.sh verified|swesmith" >&2
+    echo "Usage: bash cloud/collect.sh verified|swesmith" >&2
     exit 2
     ;;
 esac
@@ -38,7 +38,7 @@ fi
 gpu_id_array
 
 RUN_ROOT="${RUN_ROOT:-$DEBUG_DEPO_SCRATCH/runs/$RUN_NAME}"
-LOG_DIR="${LOG_DIR:-$RUN_ROOT/hyperstack-logs}"
+LOG_DIR="${LOG_DIR:-$RUN_ROOT/cloud-logs}"
 AGENTFORGE_MODEL="${AGENTFORGE_MODEL:-Kwai-Klear/Klear-AgentForge-8B-SFT}"
 MINI_SWE_MODEL="${MINI_SWE_MODEL:-hosted_vllm/$AGENTFORGE_MODEL}"
 CONTEXT_LENGTH="${CONTEXT_LENGTH:-65536}"
@@ -47,19 +47,19 @@ TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-21600}"
 VLLM_MODEL="${VLLM_MODEL:-$AGENTFORGE_MODEL}"
 
 if [[ "${MINI_SWE_RUNNER:-singularity}" != "singularity" ]]; then
-  echo "HyperStack requires MINI_SWE_RUNNER=singularity for Apptainer execution." >&2
+  echo "Cloud requires MINI_SWE_RUNNER=singularity for Apptainer execution." >&2
   exit 2
 fi
 if [[ "${MINI_SWE_ENVIRONMENT_CLASS:-singularity}" != "singularity" ]]; then
-  echo "HyperStack requires MINI_SWE_ENVIRONMENT_CLASS=singularity." >&2
+  echo "Cloud requires MINI_SWE_ENVIRONMENT_CLASS=singularity." >&2
   exit 2
 fi
 if [[ "${MSWEA_SINGULARITY_EXECUTABLE:-apptainer}" != "apptainer" ]]; then
-  echo "HyperStack requires MSWEA_SINGULARITY_EXECUTABLE=apptainer." >&2
+  echo "Cloud requires MSWEA_SINGULARITY_EXECUTABLE=apptainer." >&2
   exit 2
 fi
 if [[ "$FAMILY" == "verified" && "${HARNESS:-mini-swe-agent-plus}" != "mini-swe-agent-plus" ]]; then
-  echo "HyperStack Verified collection requires HARNESS=mini-swe-agent-plus." >&2
+  echo "Cloud Verified collection requires HARNESS=mini-swe-agent-plus." >&2
   exit 2
 fi
 
@@ -69,13 +69,13 @@ if [[ -n "$TASK_IDS_FILE" && ! -s "$DEBUG_DEPO_ROOT/$TASK_IDS_FILE" && ! -s "$TA
 fi
 
 cat <<MSG
-HyperStack $FAMILY trajectory collection
+Cloud $FAMILY trajectory collection
   run:                 $RUN_NAME
   run root:            $RUN_ROOT
   dataset/split:       $DATASET / $SPLIT
   expected tasks:      $EXPECTED_TASKS
   shards/GPUs:         $NUM_SHARDS / $GPU_IDS
-  GPU selection:       $HYPERSTACK_GPU_SOURCE
+  GPU selection:       $CLOUD_GPU_SOURCE
   workers per shard:   $ROLLOUT_WORKERS
   total worker slots:  $((NUM_SHARDS * ROLLOUT_WORKERS))
   model:               $AGENTFORGE_MODEL
@@ -144,7 +144,7 @@ run_shard() {
   AGENTFORGE_MODEL="$AGENTFORGE_MODEL" \
   MINI_SWE_MODEL="$MINI_SWE_MODEL" \
   CONTEXT_LENGTH="$CONTEXT_LENGTH" \
-    bash "$HYPERSTACK_DIR/serve_vllm.sh" >"$vllm_log" 2>&1 &
+    bash "$CLOUD_DIR/serve_vllm.sh" >"$vllm_log" 2>&1 &
   local vllm_pid=$!
 
   stop_vllm() {
@@ -185,7 +185,7 @@ run_shard() {
 }
 
 for ((shard_index = 0; shard_index < NUM_SHARDS; shard_index++)); do
-  gpu_id="${HYPERSTACK_GPU_ID_ARRAY[$shard_index]}"
+  gpu_id="${CLOUD_GPU_ID_ARRAY[$shard_index]}"
   collector_log="$LOG_DIR/collect-$FAMILY-shard-$shard_index.log"
   run_shard "$shard_index" "$gpu_id" >"$collector_log" 2>&1 &
   shard_pids+=("$!")

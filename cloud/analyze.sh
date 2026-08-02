@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HYPERSTACK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLOUD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$HYPERSTACK_DIR/common.sh"
+source "$CLOUD_DIR/common.sh"
 
 FAMILY="${1:-verified}"
 case "$FAMILY" in
   verified)
-    RUN_NAME="${RUN_NAME:-agentforge-verified-hyperstack}"
+    RUN_NAME="${RUN_NAME:-agentforge-verified-cloud}"
     EXPECTED_TASKS="${EXPECTED_TASKS:-500}"
     ;;
   swesmith)
@@ -21,7 +21,7 @@ case "$FAMILY" in
     export RUNS_PER_TEMPERATURE TEMPERATURES TOTAL_SAMPLES
     ;;
   *)
-    echo "Usage: bash hyperstack/analyze.sh verified|swesmith" >&2
+    echo "Usage: bash cloud/analyze.sh verified|swesmith" >&2
     exit 2
     ;;
 esac

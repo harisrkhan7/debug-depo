@@ -291,17 +291,17 @@ change the winner only by small, noisy validation differences. Repeatedly
 optimizing a small validation set increases selection bias
 ([Cawley and Talbot, 2010](#references)).
 
-## HyperStack command templates
+## Cloud command templates
 
 The examples assume the completed 1,000-task artifacts use
 `RUN_NAME=swesmith-train-1000-r2`.
 
-In each new HyperStack shell, first load the tracked defaults and any ignored
+In each new Cloud shell, first load the tracked defaults and any ignored
 machine-local overrides. This defines `DEBUG_DEPO_SCRATCH` and the persistent
 `UV` executable used below:
 
 ```bash
-source hyperstack/env.sh
+source cloud/env.sh
 ```
 
 Train a DMPO trial:
@@ -313,12 +313,11 @@ DMPO_TRIAL_NAME=g07-lr1e6-b01-ga16 \
 DMPO_GAMMA=0.7 \
 DMPO_LEARNING_RATE=1e-6 \
 DMPO_BETA=0.1 \
-NUM_PROCESSES=8 \
 MAX_LENGTH=32768 \
 PER_DEVICE_BATCH_SIZE=1 \
 GRADIENT_ACCUMULATION_STEPS=16 \
 EPOCHS=3 \
-  bash hyperstack/run.sh dmpo
+  bash cloud/run.sh dmpo
 ```
 
 Train a paper-control DEPO trial from the selected DMPO package:
@@ -333,12 +332,11 @@ ALPHA_TOKENS=2 \
 ALPHA_STEPS=2 \
 DEPO_LEARNING_RATE=2e-5 \
 DEPO_BETA=0.2 \
-NUM_PROCESSES=8 \
 MAX_LENGTH=32768 \
 PER_DEVICE_BATCH_SIZE=1 \
 GRADIENT_ACCUMULATION_STEPS=16 \
 EPOCHS=3 \
-  bash hyperstack/run.sh depo
+  bash cloud/run.sh depo
 ```
 
 Evaluate one packaged model on the 100-task budget:
@@ -350,18 +348,14 @@ MODEL_PATH="$DEBUG_DEPO_SCRATCH/runs/$TRAIN_RUN_NAME/experiments/dmpo/$TRIAL_NAM
 
 RUN_NAME="validation-100-dmpo-$TRIAL_NAME" \
 TASK_IDS_FILE=data/splits/swesmith_validation_100_instance_ids.txt \
-EXPECTED_TASKS=100 \
-NUM_SHARDS=8 \
-RUNS_PER_TEMPERATURE=1 \
-TEMPERATURES=0.0 \
-CONTEXT_LENGTH=32768 \
-MAX_STEPS=200 \
-AGENTFORGE_MODEL="$MODEL_PATH" \
-  bash hyperstack/run.sh validate
+MODEL_PATH="$MODEL_PATH" \
+  bash cloud/run.sh validate
 ```
 
-For 200 or 500 tasks, change the run name, task-ID file, and expected count
-together. Never reuse one `RUN_NAME` for a different model or task budget.
+`validate` infers the expected count from the task-ID file, runs each task once
+at temperature 0, and defaults to a 32,768-token context and 200 steps. For 200
+or 500 tasks, change the run name and task-ID file together. Never reuse one
+`RUN_NAME` for a different model or task budget.
 
 For single-rollout SWE-smith analyses, compare the generated
 `analysis/rollouts.csv` files:

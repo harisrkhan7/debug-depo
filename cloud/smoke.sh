@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HYPERSTACK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLOUD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FAMILY="${1:-verified}"
 # shellcheck disable=SC1091
-source "$HYPERSTACK_DIR/common.sh"
+source "$CLOUD_DIR/common.sh"
 
 # Exercise every detected GPU/shard path with one task and a bounded agent
 # budget.
@@ -18,10 +18,10 @@ export EVAL_MAX_WORKERS="${EVAL_MAX_WORKERS:-$NUM_SHARDS}"
 
 case "$FAMILY" in
   verified)
-    export RUN_NAME="${RUN_NAME:-agentforge-verified-hyperstack-smoke}"
+    export RUN_NAME="${RUN_NAME:-agentforge-verified-cloud-smoke}"
     ;;
   swesmith)
-    export RUN_NAME="${RUN_NAME:-swesmith-hyperstack-smoke}"
+    export RUN_NAME="${RUN_NAME:-swesmith-cloud-smoke}"
     export TASK_IDS_FILE="${TASK_IDS_FILE:-data/splits/swesmith_train_1000_instance_ids.txt}"
     # Collection limits this larger candidate list to EXPECTED_TASKS. Evaluation
     # must therefore use the merged prediction IDs, not require every candidate.
@@ -32,9 +32,9 @@ case "$FAMILY" in
     export TEMPERATURES="${TEMPERATURES:-0.6:0.7}"
     ;;
   *)
-    echo "Usage: bash hyperstack/smoke.sh verified|swesmith" >&2
+    echo "Usage: bash cloud/smoke.sh verified|swesmith" >&2
     exit 2
     ;;
 esac
 
-exec bash "$HYPERSTACK_DIR/pipeline.sh" "$FAMILY"
+exec bash "$CLOUD_DIR/pipeline.sh" "$FAMILY"

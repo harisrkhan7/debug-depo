@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HYPERSTACK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLOUD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$HYPERSTACK_DIR/common.sh"
+source "$CLOUD_DIR/common.sh"
 
 require_command apptainer
 require_separate_storage
@@ -29,22 +29,25 @@ fi
 
 if ! apptainer inspect "$VLLM_IMAGE" >/dev/null 2>&1; then
   echo "vLLM Apptainer image is missing or invalid: $VLLM_IMAGE" >&2
-  echo "Run bash hyperstack/setup.sh first." >&2
+  echo "Run bash cloud/setup.sh first." >&2
   exit 2
 fi
 
 bind_args=(
   --bind "$DEBUG_DEPO_ROOT:$DEBUG_DEPO_ROOT"
-  --bind "$HYPERSTACK_PERSISTENT_ROOT:$HYPERSTACK_PERSISTENT_ROOT"
+  --bind "$CLOUD_PERSISTENT_ROOT:$CLOUD_PERSISTENT_ROOT"
   --bind "$DEBUG_DEPO_EPHEMERAL:$DEBUG_DEPO_EPHEMERAL"
 )
 
 export CUDA_VISIBLE_DEVICES="$GPU_ID"
 export APPTAINERENV_CUDA_VISIBLE_DEVICES="$GPU_ID"
 export APPTAINERENV_HF_HOME="$HF_HOME"
+export APPTAINERENV_HF_HUB_CACHE="$HF_HUB_CACHE"
 export APPTAINERENV_HF_HUB_DISABLE_XET="${HF_HUB_DISABLE_XET:-1}"
+export APPTAINERENV_HF_HUB_ENABLE_HF_TRANSFER="${HF_HUB_ENABLE_HF_TRANSFER:-0}"
 if [[ -n "${HF_TOKEN:-}" ]]; then
   export APPTAINERENV_HF_TOKEN="$HF_TOKEN"
+  export APPTAINERENV_HUGGING_FACE_HUB_TOKEN="$HF_TOKEN"
 fi
 
 read -r -a vllm_extra_args <<<"${VLLM_EXTRA_ARGS:-}"

@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HYPERSTACK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLOUD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$HYPERSTACK_DIR/common.sh"
+source "$CLOUD_DIR/common.sh"
 
 OBJECTIVE="${1:-}"
 case "$OBJECTIVE" in
   dmpo|depo) ;;
   *)
-    echo "Usage: bash hyperstack/validate_model.sh dmpo|depo" >&2
+    echo "Usage: bash cloud/validate_model.sh dmpo|depo" >&2
     exit 2
     ;;
 esac
@@ -47,4 +47,4 @@ export VLLM_MODEL="$MODEL_PATH"
 export EXPECTED_TASKS="${EXPECTED_TASKS:-500}"
 export CONTEXT_LENGTH="${CONTEXT_LENGTH:-32768}"
 export TEMPERATURE="${TEMPERATURE:-0.0}"
-bash "$HYPERSTACK_DIR/pipeline.sh" verified
+bash "$CLOUD_DIR/pipeline.sh" verified

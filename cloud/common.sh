@@ -119,6 +119,7 @@ require_separate_storage() {
   ephemeral_paths=(
     "$DEBUG_DEPO_EPHEMERAL"
     "$DEBUG_DEPO_CACHE_ROOT"
+    "$DEBUG_DEPO_SIF_ROOT"
     "$CLOUD_RUNTIME_DIR"
     "$HF_HOME"
     "$HF_HUB_CACHE"

@@ -32,6 +32,9 @@ case "$ACTION" in
   build-cache)
     exec bash "$CLOUD_DIR/build_cache.sh" "$@"
     ;;
+  sifs)
+    exec bash "$CLOUD_DIR/sync_sifs.sh" "$@"
+    ;;
   collect)
     exec bash "$CLOUD_DIR/collect.sh" "$@"
     ;;
@@ -81,6 +84,7 @@ Actions:
   push                          rsync this checkout to the cloud VM
   pull                          copy cloud scratch into scratch/cloud
   build-cache smoke|full        prebuild local task-image cache (50 workers)
+  sifs persist|restore          sync SIFs to or from persistent storage
   collect verified|swesmith     collect with one shard per detected GPU
   evaluate verified|swesmith    merge and evaluate trajectories
   analyze verified|swesmith     write deterministic analysis

@@ -21,7 +21,7 @@ if [[ "${INSTALL_SYSTEM_PACKAGES:-1}" == "1" ]]; then
   "${sudo_command[@]}" apt-get update
   "${sudo_command[@]}" apt-get install -y \
     build-essential ca-certificates curl git jq python3 python3-pip \
-    python3-venv software-properties-common tmux
+    python3-venv rsync software-properties-common tmux
 
   if ! command -v apptainer >/dev/null 2>&1; then
     "${sudo_command[@]}" add-apt-repository -y ppa:apptainer/ppa

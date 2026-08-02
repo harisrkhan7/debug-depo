@@ -288,7 +288,7 @@ def test_pull_dry_run_creates_local_cloud_folder(tmp_path: Path) -> None:
         env={
             "DRY_RUN": "1",
             "CLOUD_REMOTE": "ubuntu@example.test",
-            "CLOUD_REMOTE_PERSISTENT_ROOT": "/lambda/nfs/debug-depo/debug-depo-persistent",
+            "CLOUD_REMOTE_PERSISTENT_ROOT": "/lambda/nfs/Debug-Depo/debug-depo-persistent",
             "LOCAL_CLOUD_SCRATCH_DIR": str(destination),
             "RSYNC_BIN": "/usr/bin/true",
         },
@@ -296,7 +296,7 @@ def test_pull_dry_run_creates_local_cloud_folder(tmp_path: Path) -> None:
     assert completed.returncode == 0, completed.stderr
     assert destination.is_dir()
     assert (
-        "ubuntu@example.test:/lambda/nfs/debug-depo/debug-depo-persistent/scratch/"
+        "ubuntu@example.test:/lambda/nfs/Debug-Depo/debug-depo-persistent/scratch/"
         in completed.stdout
     )
     assert str(destination) in completed.stdout

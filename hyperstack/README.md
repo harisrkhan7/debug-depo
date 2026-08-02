@@ -1,22 +1,20 @@
 # HyperStack runner
 
 This directory provides the same high-level workflows as `cluster/`, but runs
-them directly on one HyperStack H100 80 GB SXM5 x8 VM rather than submitting
-PBS jobs. It targets the Canada `n3-H100-SXM5x8` flavor: 192 vCPUs, 1,800 GB
-RAM, eight 80 GB H100 GPUs, and 32,000 GB of ephemeral storage. `preflight`
-prints the detected inventory. The scripts themselves remain compatible with
-other HyperStack hosts that expose at least eight GPUs.
+them directly on one HyperStack GPU VM rather than submitting PBS jobs. At
+startup the scripts query `nvidia-smi`, use every reported GPU, and create one
+collection shard per GPU.
 
 The tracked defaults target:
 
 | Resource | Default |
 | --- | ---: |
 | GPU model | H100 80 GB SXM5 |
-| GPUs | 8 |
-| Collection shards | 8 (one vLLM server per GPU) |
-| Trajectory workers | 8 per shard (64 total slots) |
+| GPUs | Detected with `nvidia-smi` (typically 4 or 8) |
+| Collection shards | One per detected GPU |
+| Trajectory workers | 8 per shard |
 | Cache-build workers | 50 (maximum: 100) |
-| Preference-training processes | 8 |
+| Preference-training processes | One per detected GPU |
 | Evaluation workers | 80 |
 
 ## Storage and hibernation
@@ -203,18 +201,17 @@ The smoke commands exercise collection, prediction merging, Apptainer
 evaluation, and analysis without committing to a full run:
 
 ```bash
-# Eight Verified tasks: one task per GPU/shard, eight trajectories total.
+# One Verified task per detected GPU/shard.
 bash hyperstack/run.sh smoke verified
 
-# Eight SWE-smith tasks, sampled once at 0.6 and once at 0.7:
-# one task per GPU/shard, 16 trajectories total.
+# One SWE-smith task per GPU/shard, sampled once at 0.6 and once at 0.7.
 bash hyperstack/run.sh smoke swesmith
 ```
 
-Both use all eight GPUs, eight shards, the configured 8-worker shard pools,
-and a default ceiling of 20 agent steps. The evaluation stage uses eight
-workers. The first smoke run may still need to download task images that were
-not covered by `build-cache smoke`.
+Both use every detected GPU, one shard and one smoke task per GPU, the
+configured 8-worker shard pools, and a default ceiling of 20 agent steps. The
+evaluation worker count matches the GPU count. The first smoke run may still
+need to download task images that were not covered by `build-cache smoke`.
 
 Preview either smoke without starting vLLM or Apptainer:
 
@@ -224,8 +221,8 @@ DRY_RUN=1 bash hyperstack/run.sh smoke swesmith
 ```
 
 Override `RUN_NAME`, `EXPECTED_TASKS`, `MAX_STEPS`, or the timeouts when a
-larger diagnostic run is useful. Keep `EXPECTED_TASKS` at least 8 because the
-HyperStack collection wrapper intentionally requires all eight shards.
+larger diagnostic run is useful. Keep `EXPECTED_TASKS` at least as large as
+the detected GPU count because every collection shard must receive work.
 
 ## Trajectory collection, evaluation, and analysis
 
@@ -252,9 +249,9 @@ RUN_NAME=swesmith-train-1000 \
   bash hyperstack/run.sh pipeline swesmith
 ```
 
-Each collection uses eight shards and all eight GPUs. Every shard owns one GPU,
-one private vLLM server, and 8 trajectory workers. vLLM and mini-swe task
-environments both run through Apptainer and reuse the ephemeral SIF cache.
+Each collection uses every detected GPU. Every GPU owns one shard, one private
+vLLM server, and 8 trajectory workers. vLLM and mini-swe task environments both
+run through Apptainer and reuse the ephemeral SIF cache.
 
 Stages may also be run or resumed separately:
 
@@ -286,7 +283,7 @@ RUN_NAME=swesmith-train-1000 \
   bash hyperstack/run.sh validate-data
 ```
 
-Train and package DMPO on all eight GPUs:
+Train and package DMPO on all detected GPUs:
 
 ```bash
 RUN_NAME=swesmith-train-1000 \
@@ -315,8 +312,9 @@ DEPO_TRIAL_NAME=alpha2 \
   bash hyperstack/run.sh train
 ```
 
-All training commands default to `NUM_PROCESSES=8`, so Accelerate uses every
-H100. Checkpoints and packaged models remain in the persistent run root.
+All training commands default `NUM_PROCESSES` to the detected GPU count, so
+Accelerate uses every configured H100. Checkpoints and packaged models remain
+in the persistent run root.
 
 The combined command accepts separate settings for each stage:
 
@@ -345,7 +343,7 @@ separate checkpoints, manifests, packages, and evaluation paths.
 ## Validation
 
 Run the repository-disjoint 500-task SWE-smith validation pipeline with the
-same eight-shard, eight-worker-per-shard layout:
+same one-shard-per-GPU, eight-worker-per-shard layout:
 
 ```bash
 bash hyperstack/run.sh validate
@@ -380,9 +378,14 @@ VLLM_GPU_MEMORY_UTILIZATION=0.85 \
   bash hyperstack/run.sh collect verified
 ```
 
-`NUM_SHARDS=8`, eight `GPU_IDS`, `ROLLOUT_WORKERS=8`, and
-`NUM_PROCESSES=8` are enforced by the relevant H100 workflows. Evaluation does
-not require GPUs and uses the requested ephemeral task-image cache.
+`GPU_IDS` defaults to the indices reported by `nvidia-smi`; `NUM_SHARDS` and
+`NUM_PROCESSES` default to that list's length. `ROLLOUT_WORKERS=8` remains a
+per-shard default. To select a GPU subset, set `GPU_IDS` and matching
+`NUM_SHARDS`/`NUM_PROCESSES` values explicitly. Evaluation does not itself use
+the GPUs, but `NUM_SHARDS` must match the run being evaluated. When
+`nvidia-smi` is unavailable, offline dry-runs fall back to the original eight
+GPU layout, so set `GPU_IDS` explicitly when inspecting a differently sharded
+run on a CPU-only host.
 
 The `docker://` prefix above is an Apptainer OCI transport URI. It tells
 `apptainer pull` where to obtain the image and does not invoke or require the

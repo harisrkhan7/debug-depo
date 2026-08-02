@@ -122,7 +122,7 @@ hashes, and generation policy are documented in
 src/debug_depo/   Python implementation and command-line tools
 scripts/          Local collection, evaluation, data, and training entrypoints
 cluster/          PBS submission, environment, and Apptainer support
-hyperstack/       Direct H100 SXM5 x8 setup, sharding, cache, training, and validation
+hyperstack/       Direct multi-GPU setup, dynamic sharding, cache, training, and validation
 notebooks/        Guarded local and cluster workflows
 data/splits/      Immutable task memberships and split provenance
 docs/             Workflow and research notes

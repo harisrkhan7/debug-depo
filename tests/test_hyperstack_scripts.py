@@ -11,14 +11,34 @@ HYPERSTACK = ROOT / "hyperstack"
 
 
 def run_script(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    test_env = {
+        "GPU_IDS": "0,1,2,3,4,5,6,7",
+        "HYPERSTACK_LOCAL_ENV": os.devnull,
+        "NUM_SHARDS": "8",
+        "NUM_PROCESSES": "8",
+    }
+    test_env.update(env or {})
     return subprocess.run(
         ["bash", *args],
         cwd=ROOT,
-        env={**os.environ, **(env or {})},
+        env={**os.environ, **test_env},
         text=True,
         capture_output=True,
         check=False,
     )
+
+
+def fake_nvidia_smi(tmp_path: Path, gpu_count: int) -> Path:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    executable = bin_dir / "nvidia-smi"
+    executable.write_text(
+        "#!/usr/bin/env bash\n"
+        f"for ((index = 0; index < {gpu_count}; index++)); do echo \"$index\"; done\n",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+    return bin_dir
 
 
 def test_all_hyperstack_shell_scripts_parse() -> None:
@@ -27,31 +47,58 @@ def test_all_hyperstack_shell_scripts_parse() -> None:
         assert completed.returncode == 0, f"{path.name}: {completed.stderr}"
 
 
-def test_eight_gpu_defaults_are_exposed(tmp_path: Path) -> None:
+def test_gpu_defaults_are_discovered_from_nvidia_smi(tmp_path: Path) -> None:
+    bin_dir = fake_nvidia_smi(tmp_path, gpu_count=4)
     completed = run_script(
         "-c",
         (
             "source hyperstack/env.sh; "
-            'printf "%s|%s|%s|%s|%s|%s|%s" '
+            'printf "%s|%s|%s|%s|%s|%s|%s|%s" '
             '"$NUM_SHARDS" "$ROLLOUT_WORKERS" "$CACHE_BUILD_MAX_WORKERS" '
             '"$EVAL_MAX_WORKERS" "$NUM_PROCESSES" "$GPU_IDS" '
-            '"$APPTAINER_MKSQUASHFS_ARGS"'
+            '"$HYPERSTACK_GPU_SOURCE" "$APPTAINER_MKSQUASHFS_ARGS"'
         ),
         env={
             "HYPERSTACK_PERSISTENT_ROOT": str(tmp_path / "persistent"),
             "HYPERSTACK_EPHEMERAL_ROOT": str(tmp_path / "ephemeral"),
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "GPU_IDS": "",
+            "NUM_SHARDS": "",
+            "NUM_PROCESSES": "",
         },
     )
     assert completed.returncode == 0, completed.stderr
-    assert completed.stdout == "8|8|50|80|8|0,1,2,3,4,5,6,7|-processors 2"
+    assert completed.stdout == "4|8|50|80|4|0,1,2,3|nvidia-smi|-processors 2"
 
 
 def test_help_reports_current_collection_worker_default() -> None:
     completed = run_script("hyperstack/run.sh", "help")
 
     assert completed.returncode == 0, completed.stderr
-    assert "collect with 8 GPU shards, 8 workers each" in completed.stdout
+    assert "collect with one shard per detected GPU" in completed.stdout
     assert "12 workers each" not in completed.stdout
+
+
+def test_collection_dry_run_creates_one_shard_per_detected_gpu(tmp_path: Path) -> None:
+    bin_dir = fake_nvidia_smi(tmp_path, gpu_count=4)
+    completed = run_script(
+        "hyperstack/collect.sh",
+        "verified",
+        env={
+            "DRY_RUN": "1",
+            "HYPERSTACK_PERSISTENT_ROOT": str(tmp_path / "persistent"),
+            "HYPERSTACK_EPHEMERAL_ROOT": str(tmp_path / "ephemeral"),
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "GPU_IDS": "",
+            "NUM_SHARDS": "",
+            "NUM_PROCESSES": "",
+        },
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "shards/GPUs:         4 / 0,1,2,3" in completed.stdout
+    assert "GPU selection:       nvidia-smi" in completed.stdout
+    assert "total worker slots:  32" in completed.stdout
 
 
 def test_validation_pipeline_dry_run_uses_holdout_and_all_shards(tmp_path: Path) -> None:

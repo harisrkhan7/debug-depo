@@ -50,11 +50,11 @@ validate_data() {
 
 configure_training() {
   require_positive_integer NUM_PROCESSES "$NUM_PROCESSES"
-  if ((NUM_PROCESSES != 8)); then
-    echo "HyperStack preference training is configured for all 8 GPUs; got NUM_PROCESSES=$NUM_PROCESSES." >&2
+  gpu_id_array
+  if ((NUM_PROCESSES != NUM_SHARDS)); then
+    echo "NUM_PROCESSES must equal the number of configured GPUs ($NUM_SHARDS), got: $NUM_PROCESSES." >&2
     return 2
   fi
-  gpu_id_array
   export CUDA_VISIBLE_DEVICES="${GPU_IDS// /,}"
   export NUM_PROCESSES
   export PACKAGE_MODEL="${PACKAGE_MODEL:-1}"

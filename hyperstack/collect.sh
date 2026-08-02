@@ -31,10 +31,6 @@ require_run_name "$RUN_NAME"
 require_positive_integer NUM_SHARDS "$NUM_SHARDS"
 require_positive_integer ROLLOUT_WORKERS "$ROLLOUT_WORKERS"
 require_positive_integer EXPECTED_TASKS "$EXPECTED_TASKS"
-if ((NUM_SHARDS != 8)); then
-  echo "HyperStack collection is configured for exactly 8 shards/GPUs; got NUM_SHARDS=$NUM_SHARDS." >&2
-  exit 2
-fi
 if ((NUM_SHARDS > EXPECTED_TASKS)); then
   echo "NUM_SHARDS ($NUM_SHARDS) cannot exceed EXPECTED_TASKS ($EXPECTED_TASKS)." >&2
   exit 2
@@ -79,6 +75,7 @@ HyperStack $FAMILY trajectory collection
   dataset/split:       $DATASET / $SPLIT
   expected tasks:      $EXPECTED_TASKS
   shards/GPUs:         $NUM_SHARDS / $GPU_IDS
+  GPU selection:       $HYPERSTACK_GPU_SOURCE
   workers per shard:   $ROLLOUT_WORKERS
   total worker slots:  $((NUM_SHARDS * ROLLOUT_WORKERS))
   model:               $AGENTFORGE_MODEL

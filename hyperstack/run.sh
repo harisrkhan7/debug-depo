@@ -66,18 +66,18 @@ Usage: bash hyperstack/run.sh ACTION [ARGUMENT]
 Actions:
   setup                         install runtime and project dependencies
   preflight                     verify GPUs, runtimes, paths, and capacity
-  smoke verified|swesmith       bounded end-to-end eight-GPU smoke pipeline
+  smoke verified|swesmith       bounded end-to-end all-GPU smoke pipeline
   push                          rsync this checkout to HyperStack
   pull                          copy all HyperStack scratch into scratch/hyperstack
   build-cache smoke|full        prebuild ephemeral task-image cache (50 workers)
-  collect verified|swesmith     collect with 8 GPU shards, 8 workers each
+  collect verified|swesmith     collect with one shard per detected GPU
   evaluate verified|swesmith    merge and evaluate trajectories
   analyze verified|swesmith     write deterministic analysis
   pipeline verified|swesmith    collect, evaluate, and analyze
   preference-data               build DMPO and DEPO data
   validate-data                 validate both preference datasets
-  dmpo                          train/package DMPO on all 8 GPUs
-  depo                          train/package DEPO on all 8 GPUs
+  dmpo                          train/package DMPO on all detected GPUs
+  depo                          train/package DEPO on all detected GPUs
   train                         build data, then train DMPO -> DEPO
   validate                      run the 500-task SWE-smith holdout pipeline
   validate-model dmpo|depo      evaluate a packaged model on Verified

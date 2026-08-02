@@ -39,11 +39,17 @@ gpu_id_array() {
     return 2
   fi
   local gpu_id
+  local seen_gpu_ids=" "
   for gpu_id in "${HYPERSTACK_GPU_ID_ARRAY[@]}"; do
     if [[ ! "$gpu_id" =~ ^[0-9]+$ ]]; then
       echo "GPU_IDS must contain non-negative integers, got: $gpu_id" >&2
       return 2
     fi
+    if [[ "$seen_gpu_ids" == *" $gpu_id "* ]]; then
+      echo "GPU_IDS must not contain duplicate IDs, got: $GPU_IDS" >&2
+      return 2
+    fi
+    seen_gpu_ids+="$gpu_id "
   done
 }
 

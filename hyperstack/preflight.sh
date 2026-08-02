@@ -18,12 +18,19 @@ if ! apptainer inspect "$VLLM_IMAGE" >/dev/null 2>&1; then
   exit 2
 fi
 
-gpu_count="$(nvidia-smi --query-gpu=index --format=csv,noheader | wc -l)"
+gpu_indices="$(nvidia-smi --query-gpu=index --format=csv,noheader)"
+gpu_count="$(wc -l <<<"$gpu_indices")"
 gpu_count="${gpu_count//[[:space:]]/}"
 if ((gpu_count < NUM_SHARDS)); then
   echo "Expected at least $NUM_SHARDS GPUs, but nvidia-smi reports $gpu_count." >&2
   exit 2
 fi
+for gpu_id in "${HYPERSTACK_GPU_ID_ARRAY[@]}"; do
+  if ! grep -Eq "^[[:space:]]*$gpu_id[[:space:]]*$" <<<"$gpu_indices"; then
+    echo "Configured GPU $gpu_id is not present in the nvidia-smi inventory." >&2
+    exit 2
+  fi
+done
 gpu_inventory="$(nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader)"
 cpu_count="$(nproc)"
 memory_gib="$(awk '/^MemTotal:/ {print int($2 / 1024 / 1024)}' /proc/meminfo)"
@@ -48,7 +55,7 @@ HyperStack preflight passed.
   ephemeral cache:  $DEBUG_DEPO_CACHE_ROOT
   vLLM SIF:         $VLLM_IMAGE
   CPU/RAM:          $cpu_count vCPUs / ${memory_gib} GiB
-  GPUs/shards:      $gpu_count available / $NUM_SHARDS configured
+  GPUs/shards:      $gpu_count available / $NUM_SHARDS configured ($HYPERSTACK_GPU_SOURCE)
   rollout workers:  $ROLLOUT_WORKERS per shard
   cache workers:    $CACHE_BUILD_MAX_WORKERS
   eval workers:     $EVAL_MAX_WORKERS

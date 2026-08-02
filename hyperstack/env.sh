@@ -5,9 +5,10 @@
 HYPERSTACK_CONFIG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HYPERSTACK_REPO_ROOT="$(cd "$HYPERSTACK_CONFIG_DIR/.." && pwd)"
 
-if [[ -f "$HYPERSTACK_CONFIG_DIR/local.env" ]]; then
+HYPERSTACK_LOCAL_ENV="${HYPERSTACK_LOCAL_ENV:-$HYPERSTACK_CONFIG_DIR/local.env}"
+if [[ -f "$HYPERSTACK_LOCAL_ENV" ]]; then
   # shellcheck disable=SC1091
-  source "$HYPERSTACK_CONFIG_DIR/local.env"
+  source "$HYPERSTACK_LOCAL_ENV"
 fi
 
 export DEBUG_DEPO_ROOT="${DEBUG_DEPO_ROOT:-$HYPERSTACK_REPO_ROOT}"
@@ -55,13 +56,41 @@ export VLLM_APPTAINER_SOURCE="${VLLM_APPTAINER_SOURCE:-docker://vllm/vllm-openai
 export VLLM_PORT_BASE="${VLLM_PORT_BASE:-18000}"
 export VLLM_GPU_MEMORY_UTILIZATION="${VLLM_GPU_MEMORY_UTILIZATION:-0.90}"
 
-# Eight-GPU defaults for the documented H100 SXM5 x8 deployment.
-export NUM_SHARDS="${NUM_SHARDS:-8}"
-export GPU_IDS="${GPU_IDS:-0,1,2,3,4,5,6,7}"
+# Use every GPU reported by nvidia-smi by default. The fallback keeps offline
+# dry-runs and CPU-only evaluation hosts usable; GPU workflows validate the
+# configured IDs before doing work. Set GPU_IDS explicitly to select a subset.
+if [[ -n "${GPU_IDS:-}" ]]; then
+  HYPERSTACK_GPU_SOURCE="${HYPERSTACK_GPU_SOURCE:-configured}"
+else
+  detected_gpu_ids=""
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    detected_gpu_ids="$({
+      nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null || true
+    } | awk '
+      /^[[:space:]]*[0-9]+[[:space:]]*$/ {
+        gsub(/[[:space:]]/, "")
+        ids = ids (ids == "" ? "" : ",") $0
+      }
+      END { print ids }
+    ')"
+  fi
+  if [[ -n "$detected_gpu_ids" ]]; then
+    GPU_IDS="$detected_gpu_ids"
+    HYPERSTACK_GPU_SOURCE="nvidia-smi"
+  else
+    GPU_IDS="0,1,2,3,4,5,6,7"
+    HYPERSTACK_GPU_SOURCE="offline fallback"
+  fi
+fi
+normalized_gpu_ids="${GPU_IDS//,/ }"
+read -r -a detected_gpu_id_array <<<"$normalized_gpu_ids"
+HYPERSTACK_GPU_COUNT="${#detected_gpu_id_array[@]}"
+export GPU_IDS HYPERSTACK_GPU_COUNT HYPERSTACK_GPU_SOURCE
+export NUM_SHARDS="${NUM_SHARDS:-$HYPERSTACK_GPU_COUNT}"
 export ROLLOUT_WORKERS="${ROLLOUT_WORKERS:-8}"
 export CACHE_BUILD_MAX_WORKERS="${CACHE_BUILD_MAX_WORKERS:-50}"
 export EVAL_MAX_WORKERS="${EVAL_MAX_WORKERS:-80}"
-export NUM_PROCESSES="${NUM_PROCESSES:-8}"
+export NUM_PROCESSES="${NUM_PROCESSES:-$HYPERSTACK_GPU_COUNT}"
 
 export SWEBENCH_DATASET_REVISION="${SWEBENCH_DATASET_REVISION:-c104f840cc67f8b6eec6f759ebc8b2693d585d4a}"
 export SWESMITH_DATASET_REVISION="${SWESMITH_DATASET_REVISION:-77cab9055d42ab4a5c25c89a8f937096db13558e}"
@@ -89,3 +118,4 @@ hyperstack_dirs=(
 mkdir -p "${hyperstack_dirs[@]}"
 
 unset HYPERSTACK_CONFIG_DIR HYPERSTACK_REPO_ROOT hyperstack_dirs
+unset detected_gpu_ids detected_gpu_id_array normalized_gpu_ids

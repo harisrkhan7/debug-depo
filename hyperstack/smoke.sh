@@ -3,16 +3,18 @@ set -euo pipefail
 
 HYPERSTACK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FAMILY="${1:-verified}"
+# shellcheck disable=SC1091
+source "$HYPERSTACK_DIR/common.sh"
 
-# Keep all eight GPU/shard paths exercised, but assign only one task to each
-# shard and use a bounded agent budget.
-export EXPECTED_TASKS="${EXPECTED_TASKS:-8}"
+# Exercise every detected GPU/shard path with one task and a bounded agent
+# budget.
+export EXPECTED_TASKS="${EXPECTED_TASKS:-$NUM_SHARDS}"
 export LIMIT="${LIMIT:-$EXPECTED_TASKS}"
 export MAX_STEPS="${MAX_STEPS:-20}"
 export CONTEXT_LENGTH="${CONTEXT_LENGTH:-32768}"
 export TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-1800}"
 export EVAL_TIMEOUT="${EVAL_TIMEOUT:-1800}"
-export EVAL_MAX_WORKERS="${EVAL_MAX_WORKERS:-8}"
+export EVAL_MAX_WORKERS="${EVAL_MAX_WORKERS:-$NUM_SHARDS}"
 
 case "$FAMILY" in
   verified)

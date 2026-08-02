@@ -24,7 +24,7 @@ class PrefixStableTokenizer:
         return list(rendered.encode())
 
 
-def test_dmpo_turn_weights_match_paper_discount():
+def test_dmpo_turn_weights_match_authors_official_implementation():
     assert dmpo_turn_weights(3, 1) == pytest.approx([1, 2 / 3, 1 / 3])
     assert dmpo_turn_weights(3, 0.5) == pytest.approx([1, 3 / 7, 1 / 7])
     assert dmpo_turn_weights(3, 0) == pytest.approx([1, 0, 0])

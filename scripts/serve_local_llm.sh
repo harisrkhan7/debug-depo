@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 UV_BIN="${UV:-uv}"
 export UV_CACHE_DIR="${UV_CACHE_DIR:-$ROOT_DIR/.uv-cache}"
 # Default to a small public MLX coder model for local smoke tests. Override
-# MODEL=Kwai-Klear/Klear-AgentForge-8B-SFT when reproducing the paper target.
+# MODEL=Kwai-Klear/Klear-AgentForge-8B-SFT when reproducing the pinned target.
 # Avoid hf-xet downloader crashes seen on the gated Kwai-Klear model. Set
 # HF_HUB_DISABLE_XET=0 before launching if you specifically want Xet enabled.
 export HF_HUB_DISABLE_XET="${HF_HUB_DISABLE_XET:-1}"

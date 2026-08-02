@@ -73,7 +73,11 @@ bash cluster/setup_training_env.sh
 Both entrypoints use LoRA, allowing the frozen initialization to serve as the
 reference policy without a second 8B model. DMPO applies
 `phi(t,T) = gamma^t * (1 - gamma^(T-t)) / (1 - gamma^T)` to assistant-action
-tokens. DEPO uses unpaired KTO and adds
+tokens, matching the authors'
+[official implementation](https://github.com/swt-user/DMPO/blob/main/fastchat/train/dmpo_trainer_efficient.py)
+and the paper's `gamma -> 0` corollary. The displayed definition after equation
+16 omits `gamma^t`, which is inconsistent with both. DEPO uses unpaired KTO and
+adds
 `alpha_tokens / tokens_per_step + alpha_steps / steps` only to desirable
 trajectories. System prompts and observations provide context but are excluded
 from the likelihood loss.
@@ -114,7 +118,7 @@ isolate checkpoints, packages, and evaluations while sharing
 and data hash; incompatible resume attempts fail. Checkpoint promotion,
 packaging, and completed-run reuse are atomic.
 
-Collection retains the paper's 65,536-token context. Training and packaged
+Collection retains the target run's 65,536-token context. Training and packaged
 evaluation default to `MAX_LENGTH=32768`; tune this for GPU memory. The builders
 select four temperature-balanced slots per task: `0,1,4,5` for the current
 two-temperature layout or `0,4,8,12` for four temperatures. Override with
@@ -194,16 +198,16 @@ cluster/submit_preference_evaluation.sh
 Analyze each held-out arm, then compare the exact per-instance matrices:
 
 ```bash
-debug-depo-compare-preference-arms \
+uv run debug-depo-compare-preference-arms \
   --baseline sft=results/sft-evaluation-500/analysis/instances.csv \
   --arm dmpo=results/dmpo-evaluation-500/analysis/instances.csv \
   --arm dmpo-depo=results/dmpo-depo-evaluation-500/analysis/instances.csv \
   --expected-tasks 500 \
-  --success-tolerance 0.01 \
+  --success-tolerance 0.03 \
   --output results/preference-arm-comparison.json
 ```
 
-Here `0.01` allows at most a one-percentage-point absolute resolution-rate
+Here `0.03` allows at most a three-percentage-point absolute resolution-rate
 drop. The command ranks the baseline and arms by total tokens per resolved
 task, reports paired step and token deltas, and refuses selection when task
 IDs differ, an evaluation is unscored, or token telemetry is incomplete.

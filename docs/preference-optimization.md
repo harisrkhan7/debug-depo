@@ -1,7 +1,7 @@
 # Preference optimization notes
 
 This note records the efficiency objective, pilot findings, implementation
-coverage, and paper-aligned experiment plan. See the [project README](../README.md)
+coverage, and paper-informed experiment plan. See the [project README](../README.md)
 for commands and operational defaults.
 
 ## Objective
@@ -46,18 +46,18 @@ The pilot also exposes two calibration issues:
 
 | Recommendation | Status | Remaining work |
 | --- | --- | --- |
-| Exact DMPO multi-turn weighting | Implemented | The trainer uses `gamma^t * (1-gamma^(T-t))/(1-gamma^T)`. |
+| DMPO multi-turn weighting | Implemented | The trainer matches the authors' official code: `gamma^t * (1-gamma^(T-t))/(1-gamma^T)`. The displayed definition after equation 16 omits `gamma^t`, but that conflicts with the paper's `gamma -> 0` corollary and official implementation. |
 | Success-first DMPO preferences | Implemented | Resolved beats unresolved; cost comparisons between failures are disabled by default. |
 | Successful-trajectory cost pairs | Implemented | `total_tokens` and `completion_tokens` are selectable; `MIN_COST_RATIO` removes negligible differences. |
-| Paper-compatible DEPO/KTO | Implemented | Raw inverse tokens-per-step and inverse-step bonuses apply only to desirable trajectories. |
+| DEPO/KTO objective | Implemented | Raw inverse tokens-per-step and inverse-step bonuses apply only to desirable trajectories. The repository labels every scored failure undesirable; the paper filters out low-quality failures. |
 | Reproducible trials and lineage | Implemented | Configuration, data hash, parent DMPO trial, checkpoints, and packages are isolated and validated. |
 | Gamma sweep | Configuration only | Run separately named trials for `gamma={0.7,0.9,0.99}`; no trainer change is required. |
-| Paper-faithful DEPO control | Configuration only | Run `DEPO_TOKEN_METRIC=completion_tokens`, `ALPHA_TOKENS=2`, and `ALPHA_STEPS=2`. |
+| DEPO paper hyperparameters | Configuration only | Run `DEPO_TOKEN_METRIC=completion_tokens`, `ALPHA_TOKENS=2`, and `ALPHA_STEPS=2`; the data and environment remain repository-specific. |
 | Full 65,536-token training/evaluation | Capacity test needed | `MAX_LENGTH` and `EVAL_CONTEXT_LENGTH` support it. Sixteen of 120 selected pilot trajectories exceed a 32K prompt history, so compare 32K and 65K if GPU memory permits. |
 | Deployment-weighted trajectory cost | Partial | Prompt, completion, total tokens, and steps are recorded, but builders do not yet accept input/output/cached-token/per-call prices. |
 | Step-aware DMPO pairs | Missing | Require the preferred successful trajectory to be Pareto-better in token cost and steps, or use an explicit composite cost for non-dominated cases. |
 | High-quality losing trajectories | Missing | Exclude empty-patch, timeout, patch-application failure, and model-terminated trajectories by default; prefer evaluated unresolved near misses. |
-| Cost-gap pair strength | Missing | Store a clipped `log(cost_ratio)` weight or target margin and consume it in the DMPO loss. SimPO supports explicit preference margins, but this would be an extension rather than paper-exact DMPO. |
+| Cost-gap pair strength | Missing | Store a clipped `log(cost_ratio)` weight or target margin and consume it in the DMPO loss. SimPO supports explicit preference margins, but this would be another local extension. |
 | Scale-normalized DEPO bonus | Missing | Normalize tokens-per-step and steps against successful reference values, preferably per task with repository/global fallbacks, and cap outlier ratios. |
 | Cost-aware evaluation and checkpoint selection | Implemented | Both analysis paths report coverage plus mean, median, and p90 token/action-step distributions for all and resolved attempts. `debug-depo-compare-preference-arms` requires an exact scored task matrix and selects the lowest-token success-noninferior arm. |
 
@@ -82,9 +82,9 @@ is roughly equivalent to `ALPHA_TOKENS=680` and `ALPHA_STEPS=2.3`. Do not make
 those raw values global defaults before implementing normalization and
 validating it on held-out data.
 
-## Paper-aligned main experiment
+## Paper-informed main experiment
 
-1. Train the primary DMPO arm with `DMPO_GAMMA=0.7` and the existing exact
+1. Train the primary DMPO arm with `DMPO_GAMMA=0.7` and the implemented
    multi-turn loss.
 2. Train the primary DEPO stage with
    `DEPO_TOKEN_METRIC=completion_tokens`, `ALPHA_TOKENS=2`, and
@@ -95,7 +95,7 @@ validating it on held-out data.
    rate is within the declared tolerance. Inspect telemetry coverage and
    paired deltas before accepting the automatic ranking.
 5. Defer token/step Pareto pairing, cost-gap margins, normalized DEPO bonuses,
-   and deployment-price weighting until the paper-aligned result is
+   and deployment-price weighting until the paper-informed result is
    established.
 
 The five-task notebook evaluation is a pipeline smoke test, not evidence for
@@ -111,9 +111,10 @@ held-out 500-task evaluation for the final performance/cost decision.
    derived.
 2. Wentao Shi, Mengqi Yuan, Junkang Wu, Qifan Wang, and Fuli Feng. 2024.
    [Direct Multi-Turn Preference Optimization for Language Agents](https://aclanthology.org/2024.emnlp-main.138/).
-   EMNLP 2024. Source of the multi-turn objective, exact `phi(t,T)`
-   coefficient, length normalization, discount-factor analysis, and evidence
-   for selecting high-quality losing trajectories.
+   EMNLP 2024. Source of the multi-turn objective, length normalization,
+   discount-factor analysis, and evidence for selecting high-quality losing
+   trajectories. The authors' [official code](https://github.com/swt-user/DMPO/blob/main/fastchat/train/dmpo_trainer_efficient.py)
+   resolves the paper's inconsistent presentation of `phi(t,T)`.
 3. Kawin Ethayarajh, Winnie Xu, Niklas Muennighoff, Dan Jurafsky, and Douwe
    Kiela. 2024.
    [Model Alignment as Prospect Theoretic Optimization](https://proceedings.mlr.press/v235/ethayarajh24a.html).
@@ -123,11 +124,12 @@ held-out 500-task evaluation for the final performance/cost decision.
    [SimPO: Simple Preference Optimization with a Reference-Free Reward](https://proceedings.neurips.cc/paper_files/paper/2024/hash/e099c1c9699814af0be873a175361713-Abstract-Conference.html).
    NeurIPS 2024. Its length-normalized reward and target-margin results
    motivate the proposed cost-gap-margin ablation; that ablation is not part
-   of paper-exact DMPO.
+   of DMPO.
 5. Sirui Chen, Mengshi Zhao, Lei Xu, Yuying Zhao, Beier Zhu, Hanwang Zhang,
    Shengjie Zhao, and Chaochao Lu. 2026.
-   [DEPO: Dual-Efficiency Preference Optimization for LLM Agents](https://arxiv.org/abs/2511.15392).
-   AAAI 2026. Source of the successful-trajectory-only efficiency principle,
+   [DEPO: Dual-Efficiency Preference Optimization for LLM Agents](https://ojs.aaai.org/index.php/AAAI/article/view/40279).
+   AAAI 2026, 40(36):30279-30287. Source of the
+   successful-trajectory-only efficiency principle,
    desirable-only inverse tokens-per-step and inverse-step bonus, balanced
    token/step ablations, and the undesirable-penalty ablation.
 

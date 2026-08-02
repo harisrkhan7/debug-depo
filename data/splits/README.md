@@ -83,20 +83,20 @@ samples, cache union, and their manifest provenance from the tracked parent
 memberships without downloading the dataset:
 
 ```bash
-python -m debug_depo.prepare_swesmith_splits --subsets-only
+uv run debug-depo-prepare-swesmith-splits --subsets-only
 ```
 
 Regenerate the parent 90/10 memberships and all derived files from the pinned
 Hugging Face dataset:
 
 ```bash
-python -m debug_depo.prepare_swesmith_splits
+uv run debug-depo-prepare-swesmith-splits
 ```
 
 Custom sample sizes are supported:
 
 ```bash
-python -m debug_depo.prepare_swesmith_splits \
+uv run debug-depo-prepare-swesmith-splits \
   --subsets-only \
   --trajectory-subset-size 5000 \
   --validation-subset-size 500

@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from debug_depo.compare_preference_arms import compare_preference_arms
+from debug_depo.compare_preference_arms import build_parser, compare_preference_arms
 
 
 COLUMNS = (
@@ -39,6 +39,21 @@ def arm_rows(outcomes, totals):
             }
         )
     return rows
+
+
+def test_success_tolerance_defaults_to_three_percentage_points():
+    args = build_parser().parse_args(
+        [
+            "--baseline",
+            "sft=baseline.csv",
+            "--arm",
+            "dmpo=dmpo.csv",
+            "--output",
+            "comparison.json",
+        ]
+    )
+
+    assert args.success_tolerance == 0.03
 
 
 def test_compare_selects_lowest_cost_success_noninferior_arm(tmp_path):

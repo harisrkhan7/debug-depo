@@ -38,7 +38,7 @@ The pinned revision, policy, repository membership, and hashes are in
 only the derived samples with:
 
 ```bash
-python -m debug_depo.prepare_swesmith_splits --subsets-only
+uv run debug-depo-prepare-swesmith-splits --subsets-only
 ```
 
 Submit the validation sample without changing the upstream split name:

@@ -11,9 +11,9 @@ See the [project README](../README.md) for an overview and workflow index.
 | Split / instances | `test` / 500 |
 | Harness | `mini-swe-agent-plus` with the AgentForge SWE scaffold |
 | Budget | 200 steps, 64K context |
-| Reported 8B SFT score | 38.2% (191/500 resolved) |
+| Repository comparison target | 38.2% (191/500 resolved) |
 
-Kwai/Klear publish the model and report in
+Kwai/Klear publish the model project in
 [`Kwai-Klear/Klear-AgentForge`](https://github.com/Kwai-Klear/Klear-AgentForge)
 and the runnable scaffold in
 [`mini-swe-agent-plus`](https://github.com/Kwai-Klear/mini-swe-agent-plus).
@@ -32,7 +32,8 @@ EXPECTED_COUNT=500
 
 That revision is the exact snapshot used by the completed
 `agentforge-verified-full-20260715` run. Only a complete default evaluation
-with the AgentForge model is compared with the paper's 38.2% target; partial
+with the AgentForge model is compared with the repository's pinned 38.2%
+target; partial
 runs and other datasets, splits, or models report measurements without target
 comparison fields.
 
@@ -40,7 +41,7 @@ The official Docker evaluator does not accept a Hugging Face revision itself.
 Before launching it, this repository therefore loads the requested pinned rows
 and the upstream evaluator's current rows and requires their complete canonical
 row hashes to match. The evaluation summary records the revision and row hash,
-and paper-comparison fields additionally require the exact pinned revision. A
+and target-comparison fields additionally require the exact pinned revision. A
 snapshot mismatch fails before Docker starts; the Apptainer evaluator loads the
 pinned revision directly.
 
@@ -129,7 +130,7 @@ scripts/collect_rollouts.sh
 ```
 
 The official harness expects a LiteLLM-style name, hence the
-`hosted_vllm/...` prefix in `MINI_SWE_MODEL`. For the paper model, serve and
+`hosted_vllm/...` prefix in `MINI_SWE_MODEL`. For the target model, serve and
 set both model variables to `Kwai-Klear/Klear-AgentForge-8B-SFT`, retaining
 that prefix for `MINI_SWE_MODEL`.
 

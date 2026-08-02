@@ -35,10 +35,10 @@ Inspect the dry run before submission. The expected count must match the unique
 instances selected across all shards. Submission fails before queuing jobs when
 `NUM_SHARDS` exceeds `EXPECTED_COUNT`, preventing empty collection shards.
 
-Evaluation summaries include the paper's 38.2% (191/500) comparison only for
-the complete default SWE-bench Verified `test` evaluation with the AgentForge
-model. Other datasets, splits, models, and partial evaluations report their
-measured results with empty target-comparison fields.
+Evaluation summaries include the repository's pinned 38.2% (191/500) target
+comparison only for the complete default SWE-bench Verified `test` evaluation
+with the AgentForge model. Other datasets, splits, models, and partial
+evaluations report their measured results with empty target-comparison fields.
 
 Important runtime split:
 
@@ -771,10 +771,10 @@ choice, or `PREFERENCE_MAX_ROLLOUTS=0` to use every collected rollout. DMPO and
 DEPO receive the same selection. The submission wrapper also accepts commas
 and converts them to the colon form required inside `qsub -v`.
 
-Collection keeps the paper's 65,536-token context default. Preference training
-and packaged-model evaluation default to 32,768 tokens, so training a 64K
-collection can truncate long trajectories. Training defaults to bf16, PyTorch
-SDPA, gradient checkpointing, one trajectory per device, and gradient
+Collection keeps the target run's 65,536-token context default. Preference
+training and packaged-model evaluation default to 32,768 tokens, so training a
+64K collection can truncate long trajectories. Training defaults to bf16,
+PyTorch SDPA, gradient checkpointing, one trajectory per device, and gradient
 accumulation of 32 on the one-GPU template. Shared preference defaults live in
 `scripts/preference_defaults.sh`. Checkpoints are written to temporary
 directories and atomically promoted, later-epoch shuffling is deterministic,

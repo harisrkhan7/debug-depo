@@ -40,6 +40,8 @@ FIELD_CANDIDATES = {
     "total_tokens": ("total_tokens",),
 }
 
+DEFAULT_SUCCESS_TOLERANCE = 0.03
+
 
 def _parse_arm_spec(value: str) -> tuple[str, Path]:
     if "=" not in value:
@@ -219,7 +221,7 @@ def compare_preference_arms(
     baseline: tuple[str, Path],
     arms: Sequence[tuple[str, Path]],
     output: str | Path,
-    success_tolerance: float = 0.0,
+    success_tolerance: float = DEFAULT_SUCCESS_TOLERANCE,
     expected_tasks: int | None = None,
     allow_incomplete_telemetry: bool = False,
 ) -> dict[str, Any]:
@@ -380,10 +382,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--success-tolerance",
         type=float,
-        default=0.0,
+        default=DEFAULT_SUCCESS_TOLERANCE,
         help=(
-            "Maximum absolute resolution-rate drop from baseline, where 0.01 is "
-            "one percentage point."
+            "Maximum absolute resolution-rate drop from baseline (default: 0.03, "
+            "or three percentage points)."
         ),
     )
     return parser

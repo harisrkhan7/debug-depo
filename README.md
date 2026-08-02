@@ -1,17 +1,17 @@
 # debug-depo
 
-Utilities for reproducing the Klear AgentForge 8B SFT result on SWE-bench
-Verified, collecting and evaluating SWE-smith trajectories, and training DMPO
-and DEPO efficiency-preference models. The same code supports lightweight Mac
-smoke tests and full HPC runs.
+Utilities for reproducing this project's pinned Klear AgentForge 8B SFT result
+on SWE-bench Verified, collecting and evaluating SWE-smith trajectories, and
+training DMPO and DEPO efficiency-preference models. The same code supports
+lightweight Mac smoke tests and full HPC runs.
 
 ## Workflows
 
 | Workflow | Purpose | Guide |
 | --- | --- | --- |
-| SWE-bench Verified | Reproduce the reported 38.2% (191/500) AgentForge result | [SWE-bench workflow](docs/swebench.md) |
+| SWE-bench Verified | Reproduce the pinned 38.2% (191/500) AgentForge target | [SWE-bench workflow](docs/swebench.md) |
 | SWE-smith | Collect eight reproducible trajectories per task and evaluate them | [SWE-smith workflow](docs/swesmith.md) |
-| DMPO and DEPO | Build immutable preference data, train models, and compare held-out efficiency | [Preference-training workflow](docs/preference-training.md) |
+| DMPO and DEPO | Build immutable preference data, train models, and compare validation efficiency | [Preference-training workflow](docs/preference-training.md) |
 | Hyperparameter sweep | Screen DMPO/DEPO trials on nested 100/200/500 validation budgets | [Sweep protocol](docs/hyperparameter-sweep.md) |
 | Research plan | Track the objective, pilot findings, implementation coverage, and references | [Preference-optimization notes](docs/preference-optimization.md) |
 | HPC | Configure storage, Apptainer, vLLM, PBS resources, and submission chains | [Cluster guide](cluster/README.md) |
@@ -67,7 +67,7 @@ scripts/evaluate_all.sh
 ```
 
 The [SWE-bench guide](docs/swebench.md) covers the local server check, exact
-paper model, custom harness contract, outputs, resume validation, sharding, and
+target model, custom harness contract, outputs, resume validation, sharding, and
 dataset overrides.
 
 ## SWE-smith and preference training

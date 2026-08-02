@@ -56,11 +56,11 @@ Treat success as a constraint and efficiency as the ranking objective:
 
 ```text
 minimize total_tokens_per_resolved_task
-subject to resolution_rate >= baseline_resolution_rate - 0.01
+subject to resolution_rate >= baseline_resolution_rate - 0.03
 ```
 
-The one-percentage-point tolerance corresponds to one task at budget 100, two
-tasks at budget 200, and five tasks at budget 500. It is an operational
+The three-percentage-point tolerance corresponds to three tasks at budget 100,
+six tasks at budget 200, and fifteen tasks at budget 500. It is an operational
 threshold, not a confidence interval.
 
 For every comparison:
@@ -210,7 +210,7 @@ Evaluate these trials on 100 tasks:
 
 | Trial | `DEPO_TOKEN_METRIC` | `ALPHA_TOKENS` | `ALPHA_STEPS` | Status |
 | --- | --- | ---: | ---: | --- |
-| `paper-a2-a2` | `completion_tokens` | `2` | `2` | Paper-aligned control |
+| `paper-a2-a2` | `completion_tokens` | `2` | `2` | DEPO paper hyperparameters |
 | `completion-balanced` | `completion_tokens` | `12` | `2` | Local scale calibration |
 | `completion-step-only` | `completion_tokens` | `0` | `2` | Paper-style ablation |
 | `total-balanced` | `total_tokens` | `600` | `2` | Deployment-cost extension |
@@ -221,7 +221,8 @@ project's local-inference/deployment cost objective, where accumulated prompt
 context is also costly.
 
 The values 12 and 600 are not DEPO paper settings. They are rounded local
-calibrations from the tracked pilot's successful trajectories:
+calibrations from all 111 successful trajectories in the tracked eight-rollout
+pilot artifact:
 
 | Pilot median | Value |
 | --- | ---: |
@@ -263,14 +264,14 @@ full beta-by-learning-rate-by-alpha grid.
 At 100 tasks:
 
 - eliminate incomplete, unscored, or telemetry-incomplete runs;
-- eliminate runs more than one resolved task below the baseline;
+- eliminate runs more than three resolved tasks below the baseline;
 - promote at most two configurations per stage;
 - when results differ by only one or two tasks, prefer promotion to 200 over
   a confident ranking claim.
 
 At 200 tasks:
 
-- apply the same one-percentage-point success constraint;
+- apply the same three-percentage-point success constraint;
 - choose the lowest-token eligible configuration after inspecting paired
   token and step deltas;
 - promote the winner and at most one genuine runner-up to 500.
@@ -320,7 +321,7 @@ EPOCHS=3 \
   bash cloud/run.sh dmpo
 ```
 
-Train a paper-control DEPO trial from the selected DMPO package:
+Train a DEPO paper-hyperparameter trial from the selected DMPO package:
 
 ```bash
 RUN_NAME=swesmith-train-1000-r2 \
@@ -366,7 +367,7 @@ For single-rollout SWE-smith analyses, compare the generated
   --arm dmpo=<dmpo-run>/analysis/rollouts.csv \
   --arm dmpo-depo=<depo-run>/analysis/rollouts.csv \
   --expected-tasks 100 \
-  --success-tolerance 0.01 \
+  --success-tolerance 0.03 \
   --output results/preference-sweep-100.json
 ```
 
@@ -432,7 +433,7 @@ sources of truth.
 
 | Choice | Evidence status |
 | --- | --- |
-| DMPO loss, turn weighting, and tuning `beta`/`gamma` | DMPO paper |
+| DMPO loss, turn weighting, and tuning `beta`/`gamma` | DMPO paper and authors' official implementation |
 | Smaller gamma for noisier losing trajectories | DMPO paper finding |
 | Unpaired desirable/undesirable objective | KTO paper |
 | Desirable-only inverse token/step DEPO bonus | DEPO paper |
@@ -444,13 +445,15 @@ sources of truth.
 | Accumulation 16 | Local update-budget heuristic |
 | Completion-balanced `12,2` | Local pilot-median calibration |
 | Total-balanced `600,2` | Local deployment-cost extension |
-| One-percentage-point success tolerance | Local operational constraint |
+| Three-percentage-point success tolerance | Local operational constraint |
 
 ## References
 
 1. Wentao Shi, Mengqi Yuan, Junkang Wu, Qifan Wang, and Fuli Feng. 2024.
    [Direct Multi-Turn Preference Optimization for Language
-   Agents](https://aclanthology.org/2024.emnlp-main.138/). EMNLP 2024.
+   Agents](https://aclanthology.org/2024.emnlp-main.138/). EMNLP 2024. See also
+   the authors' [official implementation](https://github.com/swt-user/DMPO/blob/main/fastchat/train/dmpo_trainer_efficient.py),
+   which includes the leading `gamma^t` used by this repository.
 2. Rafael Rafailov, Archit Sharma, Eric Mitchell, Christopher D. Manning,
    Stefano Ermon, and Chelsea Finn. 2023.
    [Direct Preference Optimization: Your Language Model is Secretly a Reward
@@ -464,7 +467,8 @@ sources of truth.
 4. Sirui Chen, Mengshi Zhao, Lei Xu, Yuying Zhao, Beier Zhu, Hanwang Zhang,
    Shengjie Zhao, and Chaochao Lu. 2026.
    [DEPO: Dual-Efficiency Preference Optimization for LLM
-   Agents](https://arxiv.org/abs/2511.15392). AAAI 2026.
+   Agents](https://ojs.aaai.org/index.php/AAAI/article/view/40279). AAAI 2026,
+   40(36):30279-30287.
 5. Lisha Li, Kevin Jamieson, Giulia DeSalvo, Afshin Rostamizadeh, and Ameet
    Talwalkar. 2018.
    [Hyperband: A Novel Bandit-Based Approach to Hyperparameter

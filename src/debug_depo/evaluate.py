@@ -141,7 +141,7 @@ def evaluation_target(
     total: int,
     submitted: int,
 ) -> EvaluationTarget | None:
-    """Return a paper target only when the complete evaluation setup matches."""
+    """Return a comparison target only when the complete setup matches."""
 
     normalized = (
         dataset.casefold(),

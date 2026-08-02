@@ -18,7 +18,7 @@ from debug_depo.utils import write_json
 
 
 def dmpo_turn_weights(turns: int, gamma: float) -> list[float]:
-    """Return the DMPO paper's phi(t, T) coefficient for each agent turn."""
+    """Return the DMPO authors' official coefficient for each agent turn."""
 
     if turns < 1:
         raise ValueError("turns must be positive")

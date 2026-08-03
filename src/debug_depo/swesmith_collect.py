@@ -8,6 +8,7 @@ import json
 import math
 import os
 import re
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import replace
 from pathlib import Path
@@ -273,6 +274,74 @@ def collect_swesmith(args: argparse.Namespace) -> dict[str, Any]:
         manifest["created_at"] = previous_manifest.get("created_at", run_at)
     write_json(manifest_path, manifest)
 
+    collector_id = f"{os.getpid()}-{run_at}"
+    rollout_events_path = output_dir / "rollout_events.jsonl"
+    active_rollouts_path = output_dir / "active_rollouts.json"
+    diagnostic_lock = threading.Lock()
+    active_rollouts: dict[str, dict[str, Any]] = {}
+
+    def append_diagnostic_event(payload: dict[str, Any]) -> None:
+        with rollout_events_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+            handle.write("\n")
+            handle.flush()
+
+    def write_active_rollouts(updated_at: str) -> None:
+        write_json(
+            active_rollouts_path,
+            {
+                "schema_version": 1,
+                "collector_id": collector_id,
+                "updated_at": updated_at,
+                "active": list(active_rollouts.values()),
+            },
+        )
+
+    with diagnostic_lock:
+        diagnostic_at = utc_now()
+        append_diagnostic_event(
+            {
+                "schema_version": 1,
+                "event": "collector_started",
+                "at": diagnostic_at,
+                "collector_id": collector_id,
+                "pid": os.getpid(),
+            }
+        )
+        write_active_rollouts(diagnostic_at)
+
+    def record_rollout_event(
+        event: str,
+        rollout: dict[str, Any],
+        *,
+        status: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        event_at = utc_now()
+        key = f"{rollout['task_index']}:{rollout['sample_index']}"
+        event_payload = {
+            "schema_version": 1,
+            "event": event,
+            "at": event_at,
+            "collector_id": collector_id,
+            **rollout,
+        }
+        if status is not None:
+            event_payload["status"] = status
+        if error is not None:
+            event_payload["error"] = error
+
+        with diagnostic_lock:
+            if event == "rollout_started":
+                active_rollouts[key] = {
+                    **rollout,
+                    "started_at": event_at,
+                }
+            else:
+                active_rollouts.pop(key, None)
+            append_diagnostic_event(event_payload)
+            write_active_rollouts(event_at)
+
     jobs = [
         (task_index, task, sample_index, temperature, temperature_run_index)
         for task_index, task in enumerate(tasks)
@@ -290,11 +359,25 @@ def collect_swesmith(args: argparse.Namespace) -> dict[str, Any]:
         sample_dir = ensure_dir(_sample_dir(output_dir, sample_index))
         seed = rollout_seed(args.base_seed, instance_id, sample_index)
         config = replace(base_config, temperature=temperature, seed=seed)
+        rollout_diagnostic = {
+            "instance_id": instance_id,
+            "task_index": task_index,
+            "sample_index": sample_index,
+            "temperature": temperature,
+            "temperature_run_index": temperature_run_index,
+            "seed": seed,
+        }
+        rollout_started = False
+        diagnostic_error: str | None = None
+        result: dict[str, Any] | None = None
         try:
             result = None if args.overwrite else result_from_existing(sample_dir, task)
             if result is None or result.get("status") == "error":
+                record_rollout_event("rollout_started", rollout_diagnostic)
+                rollout_started = True
                 result = run_agentforge_instance(task, sample_dir, config)
         except Exception as exc:
+            diagnostic_error = repr(exc)
             if args.stop_on_error:
                 raise
             result = {
@@ -304,6 +387,20 @@ def collect_swesmith(args: argparse.Namespace) -> dict[str, Any]:
                 "patch": "",
                 "patch_source": None,
             }
+        finally:
+            if rollout_started:
+                record_rollout_event(
+                    "rollout_finished",
+                    rollout_diagnostic,
+                    status=(
+                        str(result.get("status", "unknown"))
+                        if result is not None
+                        else "interrupted"
+                    ),
+                    error=diagnostic_error,
+                )
+        if result is None:
+            raise RuntimeError(f"Rollout did not produce a result: {instance_id}")
         return task_index, sample_index, {
             **result,
             "sample_index": sample_index,

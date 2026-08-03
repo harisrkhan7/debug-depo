@@ -54,54 +54,27 @@ Official references: [filesystems](https://docs.lambda.ai/public-cloud/filesyste
 [instance overview](https://docs.lambda.ai/public-cloud/on-demand/), and
 [SSH access](https://docs.lambda.ai/public-cloud/on-demand/connecting-instance/).
 
-## Setup
+## Setup and recovery
 
-Use a Lambda Stack or GPU Base image with Python 3.10–3.12, then create the
-ignored machine configuration on the VM:
+Follow the [VM setup and recovery runbook](RUNBOOK.md) for provisioning,
+checkout transfer, Hugging Face and Docker Hub credentials, SIF restoration,
+full setup, and replacement-VM resume commands.
+
+For an existing checkout on a configured VM, the normal setup sequence is:
 
 ```bash
 cd /home/ubuntu/debug-depo
-cp cloud/local.env.example cloud/local.env
-
+cp -n cloud/local.env.example cloud/local.env
 bash cluster/save_hf_token.sh
 bash cloud/run.sh setup
 bash cloud/run.sh storage
 bash cloud/run.sh preflight
 ```
 
-`setup` installs Apptainer and project dependencies, creates the persistent uv
-environment, installs mini-swe-agent-plus and SWE-smith, builds the pinned vLLM
-SIF, and prefetches the gated AgentForge model. The Hugging Face token stays at
-`$HOME/.config/debug-depo/hf_token` outside the repository.
+The top-level `./setup.sh` only creates local directories and fixes script
+permissions. `cloud/run.sh setup` installs and validates the cloud runtime.
 
-Use `tmux` for long-running commands:
-
-```bash
-tmux new -s debug-depo
-```
-
-## Transfer the checkout and results
-
-On the local machine, configure the default SSH alias:
-
-```sshconfig
-Host debug-depo-cloud
-  HostName <lambda-instance-ip>
-  User ubuntu
-  IdentityFile ~/.ssh/<private-key>
-```
-
-Create `cloud/local.env` locally, preview the transfer, and push:
-
-```bash
-cp cloud/local.env.example cloud/local.env
-DRY_RUN=1 bash cloud/run.sh push
-bash cloud/run.sh push
-```
-
-The push excludes Git metadata, environments, caches, outputs, external
-checkouts, and `cloud/local.env`. Create the VM's own `cloud/local.env` after
-the first push. Remote-only files are retained unless `DELETE=1` is set.
+## Transfer results
 
 Pull the complete persistent scratch tree after a run:
 
@@ -153,7 +126,7 @@ bash cloud/run.sh sifs restore
 ```
 
 These commands include SWE-bench, SWE-smith, vLLM, and future SIF
-subdirectories. They use 50 parallel transfers by default and do not delete or
+subdirectories. They use 20 parallel transfers by default and do not delete or
 remove source files. Override concurrency with `SIF_SYNC_TRANSFERS` and the
 durable location with `PERSISTENT_SIF_DIR`:
 
@@ -208,6 +181,11 @@ RUN_NAME=agentforge-verified-h100 bash cloud/run.sh analyze verified
 A compatible collection rerun reuses completed trajectories and retries
 infrastructure failures. Use a new run name after changing the dataset, model,
 or result-affecting settings.
+
+On a replacement VM, resume only with matching manifest settings, especially
+the shard count. The [recovery runbook](RUNBOOK.md#resume-swesmith-train-1000-r2)
+contains the compatibility check, exact tmux command, and progress monitor for
+`swesmith-train-1000-r2`.
 
 The reduced SFT trajectory suite collects four rollouts for each of 1,000
 training tasks—two at 0.6 and two at 0.7—then validates the SFT model once on
@@ -286,9 +264,29 @@ experiment settings on the command line. Important overrides include:
 - `GPU_IDS`, with matching `NUM_SHARDS` and `NUM_PROCESSES` when selecting a
   subset of GPUs.
 - `ROLLOUT_WORKERS`, `EVAL_MAX_WORKERS`, `MAX_STEPS`, and `CONTEXT_LENGTH`.
+- `CLOUD_SHARD_MAX_ATTEMPTS` (default `3`) retries a failed shard using its
+  existing resumable output.
+- `CLOUD_SHARD_STALL_TIMEOUT_SECONDS` (default `600`) restarts a shard when
+  its streamed collector/event logs stop advancing; set `0` to disable it.
+- `CLOUD_WATCHDOG_INTERVAL_SECONDS` (default `30`) controls health-check
+  frequency, and `CLOUD_SHARD_RETRY_DELAY_SECONDS` (default `15`) controls the
+  delay between attempts.
 - `RUN_NAME`, `TASK_IDS_FILE`, `EXPECTED_TASKS`, and `AGENTFORGE_MODEL`.
 - `VLLM_APPTAINER_SOURCE`, `VLLM_GPU_MEMORY_UTILIZATION`, and
   `APPTAINER_MKSQUASHFS_ARGS`.
+- `STREAM_OUTPUT=1` (the cloud default) preserves partial mini-swe-agent output.
+- `VLLM_LOG_REQUESTS=1` (the default) logs request metadata and up to
+  `VLLM_MAX_LOG_LEN=2048` input characters. `RUST_BACKTRACE=1` preserves Rust
+  panic backtraces. Set either diagnostic switch to `0` if needed.
+
+Each attempt keeps a timestamped `vllm.attempt-*.log`; `vllm.log` points to the
+latest attempt, while the collector log is appended across launcher restarts.
+`rollout_events.jsonl` and `active_rollouts.json` identify the instance, sample,
+temperature, and seed active at a failure without copying full prompts into a
+second log. A failed attempt snapshots that state as
+`active_rollouts.failed-*.json` before retrying. Rollout sandboxes live in a
+shard-specific temporary directory, so a failed attempt can remove only its own
+orphaned sandboxes before resuming.
 
 `GPU_IDS` defaults to `nvidia-smi` indices. CPU-only dry runs fall back to an
 eight-GPU layout, so set GPU and shard values explicitly when inspecting a run

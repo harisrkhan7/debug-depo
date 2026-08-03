@@ -108,6 +108,11 @@ immutable `TASK_IDS_FILE`. In bounded modes, `EXPECTED_TASKS` defaults to
 also rejects an incomplete sample matrix. Cluster logs live under the
 ephemeral run root, not in the repository.
 
+For a direct multi-GPU Lambda VM instead of a scheduler, use the
+[cloud guide](../cloud/README.md) and its
+[setup and recovery runbook](../cloud/RUNBOOK.md). They cover storage,
+credentials, SIF restoration, runtime setup, and replacement-VM resume.
+
 Important reproducibility and recovery behavior:
 
 - The dataset defaults to revision

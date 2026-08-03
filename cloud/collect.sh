@@ -31,6 +31,10 @@ require_run_name "$RUN_NAME"
 require_positive_integer NUM_SHARDS "$NUM_SHARDS"
 require_positive_integer ROLLOUT_WORKERS "$ROLLOUT_WORKERS"
 require_positive_integer EXPECTED_TASKS "$EXPECTED_TASKS"
+require_positive_integer CLOUD_SHARD_MAX_ATTEMPTS "$CLOUD_SHARD_MAX_ATTEMPTS"
+require_nonnegative_integer CLOUD_SHARD_STALL_TIMEOUT_SECONDS "$CLOUD_SHARD_STALL_TIMEOUT_SECONDS"
+require_positive_integer CLOUD_WATCHDOG_INTERVAL_SECONDS "$CLOUD_WATCHDOG_INTERVAL_SECONDS"
+require_nonnegative_integer CLOUD_SHARD_RETRY_DELAY_SECONDS "$CLOUD_SHARD_RETRY_DELAY_SECONDS"
 if ((NUM_SHARDS > EXPECTED_TASKS)); then
   echo "NUM_SHARDS ($NUM_SHARDS) cannot exceed EXPECTED_TASKS ($EXPECTED_TASKS)." >&2
   exit 2
@@ -78,6 +82,8 @@ Cloud $FAMILY trajectory collection
   GPU selection:       $CLOUD_GPU_SOURCE
   workers per shard:   $ROLLOUT_WORKERS
   total worker slots:  $((NUM_SHARDS * ROLLOUT_WORKERS))
+  shard attempts:      $CLOUD_SHARD_MAX_ATTEMPTS
+  stall watchdog:      ${CLOUD_SHARD_STALL_TIMEOUT_SECONDS}s
   model:               $AGENTFORGE_MODEL
   task IDs:            ${TASK_IDS_FILE:-all selected dataset tasks}
 MSG
@@ -109,6 +115,7 @@ fi
 
 require_command curl
 require_command apptainer
+require_command setsid
 require_project_environment
 
 cd "$DEBUG_DEPO_ROOT"
@@ -126,6 +133,7 @@ trap cleanup_shards HUP INT TERM
 run_shard() {
   local shard_index="$1"
   local gpu_id="$2"
+  local collector_log="$3"
   local port=$((VLLM_PORT_BASE + shard_index))
   local output_dir
   if [[ "$FAMILY" == "verified" ]]; then
@@ -133,61 +141,126 @@ run_shard() {
   else
     output_dir="$RUN_ROOT/collection/shard-$shard_index"
   fi
-  local vllm_log="$output_dir/vllm.log"
+  local vllm_link="$output_dir/vllm.log"
+  local tmp_root="$TMPDIR"
+  local shard_tmp="$tmp_root/collection-shard-$shard_index"
   mkdir -p "$output_dir"
+  mkdir -p "$shard_tmp"
 
-  GPU_ID="$gpu_id" \
-  PORT="$port" \
-  RUN_NAME="$RUN_NAME" \
-  SHARD_INDEX="$shard_index" \
-  VLLM_MODEL="$VLLM_MODEL" \
-  AGENTFORGE_MODEL="$AGENTFORGE_MODEL" \
-  MINI_SWE_MODEL="$MINI_SWE_MODEL" \
-  CONTEXT_LENGTH="$CONTEXT_LENGTH" \
-    bash "$CLOUD_DIR/serve_vllm.sh" >"$vllm_log" 2>&1 &
-  local vllm_pid=$!
-
-  stop_vllm() {
-    local process_id="$1"
-    kill "$process_id" 2>/dev/null || true
-    wait "$process_id" 2>/dev/null || true
-  }
-  trap "stop_vllm $vllm_pid" EXIT HUP INT TERM
-
-  local llm_base_url="http://127.0.0.1:$port/v1"
-  wait_for_vllm "$llm_base_url" "$vllm_pid" "$vllm_log"
-
-  export RUN_NAME RUN_ROOT OUTPUT_DIR="$output_dir"
-  export NUM_SHARDS SHARD_INDEX="$shard_index"
-  export DATASET SPLIT TASK_IDS_FILE EXPECTED_TASKS
-  export AGENTFORGE_MODEL MINI_SWE_MODEL CONTEXT_LENGTH MAX_STEPS TIMEOUT_SECONDS
-  export LLM_BASE_URL="$llm_base_url"
-  export LLM_API_KEY="${LLM_API_KEY:-local}"
-  export ROLLOUT_WORKERS
-  export MINI_SWE_WORKERS="${MINI_SWE_WORKERS:-1}"
-  export MINI_SWE_RUNNER=singularity
-  export MINI_SWE_ENVIRONMENT_CLASS=singularity
-  export MSWEA_SINGULARITY_EXECUTABLE=apptainer
-  export STREAM_OUTPUT="${STREAM_OUTPUT:-0}"
-  export CUDA_VISIBLE_DEVICES="$gpu_id"
-
-  echo "Shard $shard_index is using GPU $gpu_id and $llm_base_url."
-  if [[ "$FAMILY" == "verified" ]]; then
-    export HARNESS=mini-swe-agent-plus
-    export MINI_SWE_IMAGE_TEMPLATE="${MINI_SWE_IMAGE_TEMPLATE:-docker://ghcr.io/epoch-research/swe-bench.eval.x86_64.{instance_id}:latest}"
-    scripts/collect_rollouts.sh
-  else
-    export RUNS_PER_TEMPERATURE="${RUNS_PER_TEMPERATURE:-4}"
-    export TEMPERATURES="${TEMPERATURES:-0.6:0.7}"
-    export BASE_SEED="${BASE_SEED:-42}"
-    scripts/collect_swesmith.sh
+  if [[ -e "$vllm_link" && ! -L "$vllm_link" ]]; then
+    mv "$vllm_link" "$output_dir/vllm.before-supervisor-$(date -u '+%Y%m%dT%H%M%SZ').log"
   fi
+
+  local active_vllm_pid=""
+  local active_collector_pid=""
+  cleanup_active_attempt() {
+    if [[ -n "$active_collector_pid" ]] && kill -0 "$active_collector_pid" 2>/dev/null; then
+      terminate_process_group "$active_collector_pid"
+    fi
+    active_collector_pid=""
+    if [[ -n "$active_vllm_pid" ]]; then
+      kill "$active_vllm_pid" 2>/dev/null || true
+      wait "$active_vllm_pid" 2>/dev/null || true
+    fi
+    active_vllm_pid=""
+  }
+  trap cleanup_active_attempt EXIT HUP INT TERM
+
+  local attempt
+  local attempt_stamp
+  local vllm_log
+  local llm_base_url="http://127.0.0.1:$port/v1"
+  local attempt_status=1
+  for ((attempt = 1; attempt <= CLOUD_SHARD_MAX_ATTEMPTS; attempt++)); do
+    cleanup_shard_tmp "$tmp_root" "$shard_tmp"
+    attempt_stamp="$(date -u '+%Y%m%dT%H%M%SZ')"
+    vllm_log="$output_dir/vllm.attempt-${attempt_stamp}-${attempt}-${BASHPID}.log"
+    ln -sfn "$(basename "$vllm_log")" "$vllm_link"
+    echo "Starting shard $shard_index attempt $attempt/$CLOUD_SHARD_MAX_ATTEMPTS on GPU $gpu_id."
+
+    GPU_ID="$gpu_id" \
+    PORT="$port" \
+    RUN_NAME="$RUN_NAME" \
+    SHARD_INDEX="$shard_index" \
+    VLLM_MODEL="$VLLM_MODEL" \
+    AGENTFORGE_MODEL="$AGENTFORGE_MODEL" \
+    MINI_SWE_MODEL="$MINI_SWE_MODEL" \
+    CONTEXT_LENGTH="$CONTEXT_LENGTH" \
+      bash "$CLOUD_DIR/serve_vllm.sh" >"$vllm_log" 2>&1 &
+    active_vllm_pid=$!
+
+    if wait_for_vllm "$llm_base_url" "$active_vllm_pid" "$vllm_log"; then
+      export RUN_NAME RUN_ROOT OUTPUT_DIR="$output_dir"
+      export NUM_SHARDS SHARD_INDEX="$shard_index"
+      export DATASET SPLIT TASK_IDS_FILE EXPECTED_TASKS
+      export AGENTFORGE_MODEL MINI_SWE_MODEL CONTEXT_LENGTH MAX_STEPS TIMEOUT_SECONDS
+      export LLM_BASE_URL="$llm_base_url"
+      export LLM_API_KEY="${LLM_API_KEY:-local}"
+      export ROLLOUT_WORKERS
+      export MINI_SWE_WORKERS="${MINI_SWE_WORKERS:-1}"
+      export MINI_SWE_RUNNER=singularity
+      export MINI_SWE_ENVIRONMENT_CLASS=singularity
+      export MSWEA_SINGULARITY_EXECUTABLE=apptainer
+      export STREAM_OUTPUT="${STREAM_OUTPUT:-1}"
+      export CUDA_VISIBLE_DEVICES="$gpu_id"
+      export TMPDIR="$shard_tmp"
+
+      echo "Shard $shard_index is using GPU $gpu_id and $llm_base_url."
+      if [[ "$FAMILY" == "verified" ]]; then
+        export HARNESS=mini-swe-agent-plus
+        export MINI_SWE_IMAGE_TEMPLATE="${MINI_SWE_IMAGE_TEMPLATE:-docker://ghcr.io/epoch-research/swe-bench.eval.x86_64.{instance_id}:latest}"
+        setsid bash scripts/collect_rollouts.sh &
+      else
+        export RUNS_PER_TEMPERATURE="${RUNS_PER_TEMPERATURE:-4}"
+        export TEMPERATURES="${TEMPERATURES:-0.6:0.7}"
+        export BASE_SEED="${BASE_SEED:-42}"
+        setsid bash scripts/collect_swesmith.sh &
+      fi
+      active_collector_pid=$!
+
+      if supervise_collector \
+        "$active_vllm_pid" \
+        "$active_collector_pid" \
+        "$CLOUD_SHARD_STALL_TIMEOUT_SECONDS" \
+        "$CLOUD_WATCHDOG_INTERVAL_SECONDS" \
+        "$collector_log" "$output_dir/rollout_events.jsonl"; then
+        attempt_status=0
+      else
+        attempt_status=$?
+      fi
+      cleanup_active_attempt
+    else
+      attempt_status=$?
+      cleanup_active_attempt
+    fi
+
+    if ((attempt_status == 0)); then
+      cleanup_shard_tmp "$tmp_root" "$shard_tmp"
+      trap - EXIT HUP INT TERM
+      return 0
+    fi
+    if [[ -f "$output_dir/active_rollouts.json" ]]; then
+      cp "$output_dir/active_rollouts.json" \
+        "$output_dir/active_rollouts.failed-${attempt_stamp}-${attempt}-${BASHPID}.json"
+    fi
+    echo "Shard $shard_index attempt $attempt failed with status $attempt_status." >&2
+    if ((attempt_status == 2 || attempt_status == 127)); then
+      break
+    fi
+    if ((attempt < CLOUD_SHARD_MAX_ATTEMPTS)); then
+      sleep "$CLOUD_SHARD_RETRY_DELAY_SECONDS"
+    fi
+  done
+
+  cleanup_shard_tmp "$tmp_root" "$shard_tmp"
+  trap - EXIT HUP INT TERM
+  return "$attempt_status"
 }
 
 for ((shard_index = 0; shard_index < NUM_SHARDS; shard_index++)); do
   gpu_id="${CLOUD_GPU_ID_ARRAY[$shard_index]}"
   collector_log="$LOG_DIR/collect-$FAMILY-shard-$shard_index.log"
-  run_shard "$shard_index" "$gpu_id" >"$collector_log" 2>&1 &
+  run_shard "$shard_index" "$gpu_id" "$collector_log" >>"$collector_log" 2>&1 &
   shard_pids+=("$!")
   echo "Started shard $shard_index on GPU $gpu_id (log: $collector_log)"
 done

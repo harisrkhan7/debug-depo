@@ -23,6 +23,15 @@ require_positive_integer() {
   fi
 }
 
+require_nonnegative_integer() {
+  local name="$1"
+  local value="$2"
+  if [[ ! "$value" =~ ^[0-9]+$ ]]; then
+    echo "$name must be a non-negative integer, got: $value" >&2
+    return 2
+  fi
+}
+
 require_run_name() {
   local value="$1"
   if [[ ! "$value" =~ ^[A-Za-z0-9._-]+$ ]]; then
@@ -156,10 +165,16 @@ wait_for_vllm() {
   local log_path="$3"
   local timeout="${VLLM_STARTUP_TIMEOUT:-7200}"
   local deadline=$((SECONDS + timeout))
+  local process_status
   until curl --fail --silent --max-time 2 "$url/models" >/dev/null; do
     if ! kill -0 "$process_id" 2>/dev/null; then
-      wait "$process_id"
-      return $?
+      if wait "$process_id"; then
+        process_status=1
+      else
+        process_status=$?
+      fi
+      echo "vLLM exited before becoming ready; see $log_path" >&2
+      return "$process_status"
     fi
     if ((SECONDS >= deadline)); then
       echo "vLLM did not become ready at $url; see $log_path" >&2
@@ -167,6 +182,95 @@ wait_for_vllm() {
     fi
     sleep 5
   done
+}
+
+file_mtime_epoch() {
+  local path="$1"
+  if [[ ! -e "$path" ]]; then
+    printf '0\n'
+  elif stat -c '%Y' "$path" >/dev/null 2>&1; then
+    stat -c '%Y' "$path"
+  else
+    stat -f '%m' "$path"
+  fi
+}
+
+latest_activity_epoch() {
+  local latest=0
+  local path
+  local modified
+  for path in "$@"; do
+    modified="$(file_mtime_epoch "$path")"
+    if ((modified > latest)); then
+      latest="$modified"
+    fi
+  done
+  printf '%s\n' "$latest"
+}
+
+# Return distinct codes so callers can decide whether to restart a shard.
+CLOUD_SUPERVISOR_VLLM_EXIT=70
+CLOUD_SUPERVISOR_STALL=71
+
+supervise_collector() {
+  local vllm_pid="$1"
+  local collector_pid="$2"
+  local stall_timeout_seconds="$3"
+  local interval_seconds="$4"
+  shift 4
+  local -a activity_paths=("$@")
+  local last_activity
+  local observed_activity
+  local now
+
+  last_activity="$(date +%s)"
+  while kill -0 "$collector_pid" 2>/dev/null; do
+    if ! kill -0 "$vllm_pid" 2>/dev/null; then
+      echo "vLLM exited while its collector was still running." >&2
+      return "$CLOUD_SUPERVISOR_VLLM_EXIT"
+    fi
+
+    observed_activity="$(latest_activity_epoch "${activity_paths[@]}")"
+    if ((observed_activity > last_activity)); then
+      last_activity="$observed_activity"
+    fi
+    now="$(date +%s)"
+    if ((stall_timeout_seconds > 0 && now - last_activity >= stall_timeout_seconds)); then
+      echo "Shard made no collector progress for ${stall_timeout_seconds}s." >&2
+      return "$CLOUD_SUPERVISOR_STALL"
+    fi
+    sleep "$interval_seconds"
+  done
+
+  wait "$collector_pid"
+}
+
+terminate_process_group() {
+  local process_id="$1"
+  local grace_seconds="${2:-10}"
+  local deadline=$((SECONDS + grace_seconds))
+
+  kill -TERM -- "-$process_id" 2>/dev/null || kill -TERM "$process_id" 2>/dev/null || true
+  while kill -0 "$process_id" 2>/dev/null && ((SECONDS < deadline)); do
+    sleep 1
+  done
+  if kill -0 "$process_id" 2>/dev/null; then
+    kill -KILL -- "-$process_id" 2>/dev/null || kill -KILL "$process_id" 2>/dev/null || true
+  fi
+  wait "$process_id" 2>/dev/null || true
+}
+
+cleanup_shard_tmp() {
+  local tmp_root="$1"
+  local shard_tmp="$2"
+  if [[ -z "$tmp_root" || "$tmp_root" == "/" || "$shard_tmp" != "$tmp_root"/collection-shard-* ]]; then
+    echo "Refusing unsafe shard tmp cleanup: $shard_tmp" >&2
+    return 2
+  fi
+  mkdir -p "$shard_tmp"
+  find "$shard_tmp" -mindepth 1 -maxdepth 1 -type d -name 'minisweagent-*' \
+    -exec rm -rf -- {} +
+  find "$shard_tmp" -mindepth 1 -maxdepth 1 -type s -delete
 }
 
 available_gib() {

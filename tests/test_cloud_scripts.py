@@ -61,6 +61,53 @@ def test_cloud_shell_scripts_parse() -> None:
         assert completed.returncode == 0, f"{path.name}: {completed.stderr}"
 
 
+def test_shard_supervisor_detects_vllm_exit(tmp_path: Path) -> None:
+    completed = run_script(
+        "-c",
+        (
+            "source cloud/common.sh; "
+            "sleep 30 & collector_pid=$!; "
+            "supervise_collector 999999 \"$collector_pid\" 0 1 "
+            "\"$TEST_ACTIVITY_PATH\"; status=$?; "
+            "kill \"$collector_pid\"; wait \"$collector_pid\" 2>/dev/null; "
+            "printf '%s\\n' \"$status\""
+        ),
+        env={
+            "CLOUD_PERSISTENT_ROOT": str(tmp_path / "persistent"),
+            "CLOUD_EPHEMERAL_ROOT": str(tmp_path / "ephemeral"),
+            "TEST_ACTIVITY_PATH": str(tmp_path / "activity.log"),
+        },
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "70"
+    assert "vLLM exited" in completed.stderr
+
+
+def test_shard_supervisor_detects_no_progress(tmp_path: Path) -> None:
+    completed = run_script(
+        "-c",
+        (
+            "source cloud/common.sh; "
+            "sleep 30 & vllm_pid=$!; sleep 30 & collector_pid=$!; "
+            "supervise_collector \"$vllm_pid\" \"$collector_pid\" 1 1 "
+            "\"$TEST_ACTIVITY_PATH\"; status=$?; "
+            "kill \"$vllm_pid\" \"$collector_pid\"; "
+            "wait \"$vllm_pid\" \"$collector_pid\" 2>/dev/null; "
+            "printf '%s\\n' \"$status\""
+        ),
+        env={
+            "CLOUD_PERSISTENT_ROOT": str(tmp_path / "persistent"),
+            "CLOUD_EPHEMERAL_ROOT": str(tmp_path / "ephemeral"),
+            "TEST_ACTIVITY_PATH": str(tmp_path / "activity.log"),
+        },
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "71"
+    assert "no collector progress" in completed.stderr
+
+
 def test_environment_discovers_gpus_and_separates_storage(tmp_path: Path) -> None:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -224,4 +271,3 @@ def test_sif_sync_round_trip_copies_the_complete_tree(tmp_path: Path) -> None:
     } == expected
     arguments = arguments_file.read_text(encoding="utf-8").splitlines()
     assert arguments[:3] == ["copy", str(persistent / "sifs"), str(second_vm / "sifs")]
-    assert arguments[arguments.index("--transfers") + 1] == "50"

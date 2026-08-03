@@ -180,6 +180,18 @@ def test_collection_resume_retries_only_error_slots(tmp_path, monkeypatch):
     assert retried == ["repo__project.task-2"]
     assert summary["n_finished"] == 2
     assert summary["n_errors"] == 0
+    events = read_jsonl(output_dir / "rollout_events.jsonl")
+    starts = [event for event in events if event["event"] == "rollout_started"]
+    finishes = [event for event in events if event["event"] == "rollout_finished"]
+    assert [event["instance_id"] for event in starts] == [
+        "repo__project.task-1",
+        "repo__project.task-2",
+        "repo__project.task-2",
+    ]
+    assert len(finishes) == len(starts)
+    assert {"sample_index", "temperature", "seed"} <= starts[-1].keys()
+    active = json.loads((output_dir / "active_rollouts.json").read_text())
+    assert active["active"] == []
 
 
 def test_require_complete_accepts_model_terminations(tmp_path, monkeypatch):

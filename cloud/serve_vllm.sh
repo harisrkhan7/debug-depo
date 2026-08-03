@@ -45,12 +45,17 @@ export APPTAINERENV_HF_HOME="$HF_HOME"
 export APPTAINERENV_HF_HUB_CACHE="$HF_HUB_CACHE"
 export APPTAINERENV_HF_HUB_DISABLE_XET="${HF_HUB_DISABLE_XET:-1}"
 export APPTAINERENV_HF_HUB_ENABLE_HF_TRANSFER="${HF_HUB_ENABLE_HF_TRANSFER:-0}"
+export APPTAINERENV_RUST_BACKTRACE="${RUST_BACKTRACE:-1}"
 if [[ -n "${HF_TOKEN:-}" ]]; then
   export APPTAINERENV_HF_TOKEN="$HF_TOKEN"
   export APPTAINERENV_HUGGING_FACE_HUB_TOKEN="$HF_TOKEN"
 fi
 
 read -r -a vllm_extra_args <<<"${VLLM_EXTRA_ARGS:-}"
+vllm_diagnostic_args=()
+if [[ "${VLLM_LOG_REQUESTS:-1}" == "1" ]]; then
+  vllm_diagnostic_args+=(--enable-log-requests --max-log-len "${VLLM_MAX_LOG_LEN:-2048}")
+fi
 
 apptainer exec --nv \
   "${bind_args[@]}" \
@@ -62,6 +67,7 @@ apptainer exec --nv \
     --served-model-name "$SERVED_MODEL_NAME" \
     --max-model-len "$MAX_MODEL_LEN" \
     --gpu-memory-utilization "$VLLM_GPU_MEMORY_UTILIZATION" \
+    "${vllm_diagnostic_args[@]}" \
     "${vllm_extra_args[@]}" &
 vllm_pid=$!
 

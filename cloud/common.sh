@@ -32,6 +32,19 @@ require_nonnegative_integer() {
   fi
 }
 
+require_model_timeout_watchdog_compatibility() {
+  local model_timeout="${MINI_SWE_MODEL_TIMEOUT_SECONDS:-}"
+  local stall_timeout="${CLOUD_SHARD_STALL_TIMEOUT_SECONDS:-0}"
+  if [[ -z "$model_timeout" ]]; then
+    return 0
+  fi
+  require_positive_integer MINI_SWE_MODEL_TIMEOUT_SECONDS "$model_timeout" || return
+  if ((stall_timeout > 0 && stall_timeout <= model_timeout)); then
+    echo "CLOUD_SHARD_STALL_TIMEOUT_SECONDS must exceed MINI_SWE_MODEL_TIMEOUT_SECONDS, or be 0." >&2
+    return 2
+  fi
+}
+
 require_run_name() {
   local value="$1"
   if [[ ! "$value" =~ ^[A-Za-z0-9._-]+$ ]]; then

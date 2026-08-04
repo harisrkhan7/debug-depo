@@ -106,7 +106,7 @@ def test_miniswe_status_classification_separates_model_and_infrastructure_outcom
     assert miniswe_result_status("RetryError") == "error"
 
 
-def test_render_miniswe_command_uses_official_module_and_filter(tmp_path):
+def test_render_miniswe_command_uses_official_module_and_filter(tmp_path, monkeypatch):
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         yaml.safe_dump(
@@ -124,6 +124,7 @@ def test_render_miniswe_command_uses_official_module_and_filter(tmp_path):
         temperature=0.25,
         top_p=0.8,
     )
+    monkeypatch.setenv("MINI_SWE_MODEL_TIMEOUT_SECONDS", "1200")
 
     command = render_miniswe_command(
         instance=instance(),
@@ -144,6 +145,7 @@ def test_render_miniswe_command_uses_official_module_and_filter(tmp_path):
     assert generated_config["agent"]["step_limit"] == 7
     assert generated_config["model"]["model_kwargs"]["temperature"] == 0.25
     assert generated_config["model"]["model_kwargs"]["top_p"] == 0.8
+    assert generated_config["model"]["model_kwargs"]["timeout"] == 1200
     assert default_miniswe_model("org/model") == "hosted_vllm/org/model"
     assert default_miniswe_model("hosted_vllm/org/model") == "hosted_vllm/org/model"
 

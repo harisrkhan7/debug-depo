@@ -35,6 +35,7 @@ require_positive_integer CLOUD_SHARD_MAX_ATTEMPTS "$CLOUD_SHARD_MAX_ATTEMPTS"
 require_nonnegative_integer CLOUD_SHARD_STALL_TIMEOUT_SECONDS "$CLOUD_SHARD_STALL_TIMEOUT_SECONDS"
 require_positive_integer CLOUD_WATCHDOG_INTERVAL_SECONDS "$CLOUD_WATCHDOG_INTERVAL_SECONDS"
 require_nonnegative_integer CLOUD_SHARD_RETRY_DELAY_SECONDS "$CLOUD_SHARD_RETRY_DELAY_SECONDS"
+require_model_timeout_watchdog_compatibility
 if ((NUM_SHARDS > EXPECTED_TASKS)); then
   echo "NUM_SHARDS ($NUM_SHARDS) cannot exceed EXPECTED_TASKS ($EXPECTED_TASKS)." >&2
   exit 2
@@ -84,6 +85,7 @@ Cloud $FAMILY trajectory collection
   total worker slots:  $((NUM_SHARDS * ROLLOUT_WORKERS))
   shard attempts:      $CLOUD_SHARD_MAX_ATTEMPTS
   stall watchdog:      ${CLOUD_SHARD_STALL_TIMEOUT_SECONDS}s
+  model timeout:       ${MINI_SWE_MODEL_TIMEOUT_SECONDS:-LiteLLM default}
   model:               $AGENTFORGE_MODEL
   task IDs:            ${TASK_IDS_FILE:-all selected dataset tasks}
 MSG
@@ -260,7 +262,7 @@ run_shard() {
 for ((shard_index = 0; shard_index < NUM_SHARDS; shard_index++)); do
   gpu_id="${CLOUD_GPU_ID_ARRAY[$shard_index]}"
   collector_log="$LOG_DIR/collect-$FAMILY-shard-$shard_index.log"
-  run_shard "$shard_index" "$gpu_id" "$collector_log" >>"$collector_log" 2>&1 &
+  run_shard "$shard_index" "$gpu_id" "$collector_log" >"$collector_log" 2>&1 &
   shard_pids+=("$!")
   echo "Started shard $shard_index on GPU $gpu_id (log: $collector_log)"
 done

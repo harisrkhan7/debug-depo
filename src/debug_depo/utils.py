@@ -15,6 +15,22 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator, MutableMapping
 
 
+MISTRAL_REGEX_MODEL_TYPES = frozenset(
+    {"mistral", "mistral3", "ministral", "pixtral", "voxtral"}
+)
+
+
+def requires_mistral_regex_fix(model_config: Any) -> bool:
+    """Return whether Transformers should apply its Mistral tokenizer regex fix."""
+
+    configs = (model_config, getattr(model_config, "text_config", None))
+    return any(
+        getattr(config, "model_type", None) in MISTRAL_REGEX_MODEL_TYPES
+        for config in configs
+        if config is not None
+    )
+
+
 def ensure_dir(path: str | Path) -> Path:
     directory = Path(path)
     directory.mkdir(parents=True, exist_ok=True)

@@ -76,7 +76,7 @@ permissions. `cloud/run.sh setup` installs and validates the cloud runtime.
 
 ## Transfer results
 
-Pull the complete persistent scratch tree after a run:
+Pull the persistent scratch tree after a run:
 
 ```bash
 DRY_RUN=1 bash cloud/run.sh pull
@@ -85,7 +85,9 @@ bash cloud/run.sh pull
 
 Results are copied to `scratch/cloud/` by default. Set
 `LOCAL_CLOUD_SCRATCH_DIR` to change the destination. SIFs and other ephemeral
-caches are not included in this transfer.
+caches are not included in this transfer. Large model and checkpoint payloads
+under `runs/*/experiments/` are also skipped by default while experiment
+metadata is retained. Set `PULL_EXPERIMENT_MODELS=1` to include those payloads.
 
 ## Model and SIF caches
 
@@ -268,6 +270,9 @@ experiment settings on the command line. Important overrides include:
   existing resumable output.
 - `CLOUD_SHARD_STALL_TIMEOUT_SECONDS` (default `600`) restarts a shard when
   its streamed collector/event logs stop advancing; set `0` to disable it.
+- `MINI_SWE_MODEL_TIMEOUT_SECONDS` optionally overrides LiteLLM's per-request
+  timeout. It is operational rather than a sampling parameter, and must be
+  lower than a nonzero shard stall timeout.
 - `CLOUD_WATCHDOG_INTERVAL_SECONDS` (default `30`) controls health-check
   frequency, and `CLOUD_SHARD_RETRY_DELAY_SECONDS` (default `15`) controls the
   delay between attempts.
@@ -280,13 +285,48 @@ experiment settings on the command line. Important overrides include:
   panic backtraces. Set either diagnostic switch to `0` if needed.
 
 Each attempt keeps a timestamped `vllm.attempt-*.log`; `vllm.log` points to the
-latest attempt, while the collector log is appended across launcher restarts.
+latest attempt. The shared `cloud-logs/collect-*-shard-*.log` files contain only
+the latest launcher run because historical server and rollout evidence remains
+inside each shard.
 `rollout_events.jsonl` and `active_rollouts.json` identify the instance, sample,
 temperature, and seed active at a failure without copying full prompts into a
 second log. A failed attempt snapshots that state as
 `active_rollouts.failed-*.json` before retrying. Rollout sandboxes live in a
 shard-specific temporary directory, so a failed attempt can remove only its own
 orphaned sandboxes before resuming.
+
+### Recovering a tail shard on all GPUs
+
+Stop the normal collection before recovery. When all but one logical SWE-smith
+shard have finished, distribute the remaining shard's unfinished rollout slots
+round-robin across the configured GPUs:
+
+```bash
+RUN_NAME=swesmith-train-1000-r2 \
+EXPECTED_TASKS=1000 \
+TASK_IDS_FILE=data/splits/swesmith_train_1000_instance_ids.txt \
+RUNS_PER_TEMPERATURE=2 \
+TEMPERATURES=0.6:0.7 \
+BASE_SEED=42 \
+MAX_STEPS=200 \
+CONTEXT_LENGTH=65536 \
+TIMEOUT_SECONDS=21600 \
+MINI_SWE_MODEL_TIMEOUT_SECONDS=1200 \
+CLOUD_SHARD_STALL_TIMEOUT_SECONDS=1500 \
+RECOVERY_WORKERS_PER_GPU=8 \
+  bash cloud/run.sh recover-shard swesmith 2
+```
+
+The command preserves `NUM_SHARDS=8`, the original manifest, and all canonical
+trajectory paths. Each GPU runs one vLLM replica and receives a disjoint portion
+of the logical shard's slots; completed slots are reused. Only temporary
+sandboxes and diagnostic logs are per replica. Once every replica succeeds, a
+normal pass rebuilds the shard's canonical predictions and summaries. Rerunning
+the command is safe, and `RECOVERY_GPU_IDS` can select fewer physical GPUs.
+`MINI_SWE_MODEL_TIMEOUT_SECONDS` only changes how long LiteLLM waits for a
+response; it does not change prompts or sampling. When set, the stall watchdog
+must be disabled or set to a larger value so it cannot kill a valid in-flight
+request first.
 
 `GPU_IDS` defaults to `nvidia-smi` indices. CPU-only dry runs fall back to an
 eight-GPU layout, so set GPU and shard values explicitly when inspecting a run

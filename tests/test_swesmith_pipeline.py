@@ -194,6 +194,87 @@ def test_collection_resume_retries_only_error_slots(tmp_path, monkeypatch):
     assert active["active"] == []
 
 
+def test_recovery_replicas_partition_slots_and_defer_canonical_summary(
+    tmp_path,
+    monkeypatch,
+):
+    dataset = tmp_path / "tasks.jsonl"
+    output_dir = tmp_path / "collection"
+    write_tasks(dataset)
+    base_arguments = [
+        "--dataset",
+        str(dataset),
+        "--output-dir",
+        str(output_dir),
+        "--temperatures",
+        "0.6",
+        "--runs-per-temperature",
+        "1",
+        "--rollout-workers",
+        "1",
+        "--require-complete",
+        "--no-progress",
+    ]
+
+    def write_result(task, sample_dir, status):
+        instance_id = str(task["instance_id"])
+        trajectory_dir = Path(sample_dir) / "trajectories" / instance_id
+        trajectory_dir.mkdir(parents=True, exist_ok=True)
+        result = {
+            "instance_id": instance_id,
+            "status": status,
+            "patch": "",
+            "patch_source": None,
+        }
+        (trajectory_dir / "trajectory.json").write_text(json.dumps(result))
+        return result
+
+    monkeypatch.setattr(
+        "debug_depo.swesmith_collect.run_agentforge_instance",
+        lambda task, sample_dir, _config: write_result(task, sample_dir, "error"),
+    )
+    with pytest.raises(RuntimeError, match="did not finish every rollout"):
+        collect_swesmith(build_collect_parser().parse_args(base_arguments))
+
+    recovered = []
+
+    def recover(task, sample_dir, _config):
+        recovered.append(str(task["instance_id"]))
+        return write_result(task, sample_dir, "completed")
+
+    monkeypatch.setattr(
+        "debug_depo.swesmith_collect.run_agentforge_instance",
+        recover,
+    )
+    for replica_index in (0, 1):
+        recovery_args = build_collect_parser().parse_args(
+            [
+                *base_arguments,
+                "--recovery-run-id",
+                "test-recovery",
+                "--recovery-replicas",
+                "2",
+                "--recovery-replica-index",
+                str(replica_index),
+            ]
+        )
+        recovery_summary = collect_swesmith(recovery_args)
+        assert recovery_summary["n_assigned_rollouts"] == 1
+        assert recovery_summary["n_finished"] == 1
+
+    assert recovered == ["repo__project.task-1", "repo__project.task-2"]
+    stale_summary = json.loads((output_dir / "summary.json").read_text())
+    assert stale_summary["n_errors"] == 2
+    assert (output_dir / "recovery-test-recovery-replica-0.json").is_file()
+    assert (output_dir / "recovery-test-recovery-replica-1.json").is_file()
+
+    final_summary = collect_swesmith(
+        build_collect_parser().parse_args(base_arguments)
+    )
+    assert final_summary["n_finished"] == 2
+    assert final_summary["n_errors"] == 0
+
+
 def test_require_complete_accepts_model_terminations(tmp_path, monkeypatch):
     dataset = tmp_path / "tasks.jsonl"
     write_tasks(dataset)

@@ -191,6 +191,7 @@ if ! command -v qsub >/dev/null 2>&1; then
   exit 127
 fi
 mkdir -p "$CLUSTER_LOG_DIR"
+echo "Preference training PBS logs: $CLUSTER_LOG_DIR"
 log_args=(-o "$CLUSTER_LOG_DIR/" -e "$CLUSTER_LOG_DIR/")
 train_resource_args=(-l "select=1:ncpus=$TRAIN_NCPUS:ngpus=$NUM_PROCESSES:mem=$TRAIN_MEMORY")
 

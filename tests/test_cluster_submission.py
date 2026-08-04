@@ -178,6 +178,7 @@ def test_preference_training_chains_data_training_and_packaging(tmp_path: Path) 
     )
 
     assert completed.returncode == 0, completed.stderr
+    assert "Preference training PBS logs:" in completed.stdout
     assert [call[-1] for call in calls] == [
         "cluster/pbs/build_dmpo_pairs.pbs",
         "cluster/pbs/build_depo_data.pbs",
@@ -233,6 +234,60 @@ def test_cluster_sync_excludes_scratch_from_rsync(tmp_path: Path) -> None:
     arguments = log.read_text(encoding="utf-8").splitlines()[0].split("\t")
     assert arguments[-2:] == [f"{ROOT}/", "cluster.example:/work/debug-depo/"]
     assert "scratch/" in arguments
+
+
+def run_cluster_pull(
+    tmp_path: Path, **overrides: str
+) -> tuple[subprocess.CompletedProcess[str], list[str]]:
+    rsync, log = recording_command(tmp_path, "rsync")
+    env = base_env(
+        tmp_path,
+        COMMAND_LOG=str(log),
+        REMOTE="cluster.example",
+        REMOTE_RDS="/rds/user",
+        REMOTE_HOME="/home/user",
+        REMOTE_RUNS_DIR="/rds/user/ephemeral/debug-depo/runs",
+        LOCAL_DIR=str(tmp_path / "artifacts" / "runs"),
+        PULL_CACHE_BUILDS="0",
+        RSYNC_BIN=str(rsync),
+        **overrides,
+    )
+    completed = subprocess.run(
+        ["bash", "cluster/pull_cluster_artifacts.sh"],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    arguments = log.read_text(encoding="utf-8").splitlines()[0].split("\t")
+    return completed, arguments
+
+
+def test_cluster_pull_skips_experiment_model_payloads_by_default(tmp_path: Path) -> None:
+    completed, arguments = run_cluster_pull(tmp_path)
+
+    assert completed.returncode == 0, completed.stderr
+    for pattern in (
+        "**/experiments/**/*.safetensors",
+        "**/experiments/**/*.bin",
+        "**/experiments/**/*.pt",
+        "**/experiments/**/*.pth",
+        "**/experiments/**/*.ckpt",
+        "**/experiments/**/*.gguf",
+    ):
+        assert pattern in arguments
+    manifest = (tmp_path / "artifacts" / "runs" / "manifest.txt").read_text(encoding="utf-8")
+    assert "pull_experiment_models=0" in manifest
+
+
+def test_cluster_pull_can_include_experiment_model_payloads(tmp_path: Path) -> None:
+    completed, arguments = run_cluster_pull(tmp_path, PULL_EXPERIMENT_MODELS="1")
+
+    assert completed.returncode == 0, completed.stderr
+    assert not any("experiments" in argument for argument in arguments)
+    manifest = (tmp_path / "artifacts" / "runs" / "manifest.txt").read_text(encoding="utf-8")
+    assert "pull_experiment_models=1" in manifest
 
 
 def test_cluster_resource_profiles_keep_small_and_full_jobs_distinct() -> None:

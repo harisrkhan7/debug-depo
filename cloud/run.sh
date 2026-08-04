@@ -38,6 +38,9 @@ case "$ACTION" in
   collect)
     exec bash "$CLOUD_DIR/collect.sh" "$@"
     ;;
+  recover-shard)
+    exec bash "$CLOUD_DIR/recover_shard.sh" "$@"
+    ;;
   evaluate)
     exec bash "$CLOUD_DIR/evaluate.sh" "$@"
     ;;
@@ -86,6 +89,7 @@ Actions:
   build-cache smoke|full        prebuild local task-image cache (50 workers)
   sifs persist|restore          sync SIFs to or from persistent storage
   collect verified|swesmith     collect with one shard per detected GPU
+  recover-shard swesmith INDEX  fan one logical shard across idle GPUs
   evaluate verified|swesmith    merge and evaluate trajectories
   analyze verified|swesmith     write deterministic analysis
   pipeline verified|swesmith    collect, evaluate, and analyze

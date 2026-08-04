@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
-from debug_depo.utils import write_json
+from debug_depo.utils import requires_mistral_regex_fix, write_json
 
 
 def dmpo_turn_weights(turns: int, gamma: float) -> list[float]:
@@ -480,7 +480,7 @@ def train(config: TrainConfig) -> dict[str, Any]:
     from accelerate.utils import broadcast_object_list, set_seed
     from peft import LoraConfig, get_peft_model
     from torch.utils.data import DataLoader
-    from transformers import AutoModelForCausalLM, AutoTokenizer, get_scheduler
+    from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, get_scheduler
 
     output_dir = Path(config.output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -529,9 +529,17 @@ def train(config: TrainConfig) -> dict[str, Any]:
             "reused": True,
         }
     set_seed(config.seed)
+    model_config = AutoConfig.from_pretrained(
+        config.model_name_or_path,
+        trust_remote_code=config.trust_remote_code,
+    )
     tokenizer = AutoTokenizer.from_pretrained(
         config.model_name_or_path,
         trust_remote_code=config.trust_remote_code,
+        # Transformers 4.57.x can misidentify locally packaged Qwen models as
+        # affected Mistral tokenizers. Apply the rewrite only to Mistral-family
+        # model configurations; Qwen's existing regex is intentional.
+        fix_mistral_regex=requires_mistral_regex_fix(model_config),
     )
     if not getattr(tokenizer, "chat_template", None):
         raise ValueError("The selected tokenizer has no chat_template")
@@ -539,11 +547,12 @@ def train(config: TrainConfig) -> dict[str, Any]:
         tokenizer.pad_token = tokenizer.eos_token
 
     model_kwargs: dict[str, Any] = {
-        "torch_dtype": (
+        "dtype": (
             torch.bfloat16
             if config.mixed_precision == "bf16"
             else torch.float16 if config.mixed_precision == "fp16" else torch.float32
         ),
+        "config": model_config,
         "trust_remote_code": config.trust_remote_code,
     }
     if config.attn_implementation:

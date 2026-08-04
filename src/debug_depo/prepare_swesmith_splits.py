@@ -24,7 +24,7 @@ DEFAULT_SPLIT_SEED = 42
 DEFAULT_TRAJECTORY_SUBSET_SIZE = 5_000
 DEFAULT_VALIDATION_SUBSET_SIZE = 500
 DEFAULT_VALIDATION_SCREENING_SIZES = (100, 200)
-SPLIT_MANIFEST_SCHEMA_VERSION = 3
+SPLIT_MANIFEST_SCHEMA_VERSION = 4
 TRAJECTORY_SUBSET_FILENAME = "swesmith_train_5000_instance_ids.txt"
 VALIDATION_SUBSET_FILENAME = "swesmith_validation_500_instance_ids.txt"
 CACHE_SUBSET_FILENAME = "swesmith_cache_5500_instance_ids.txt"
@@ -42,6 +42,19 @@ def _repository_snapshot(instance_id: str) -> str:
             f"SWE-smith instance IDs must end with a dot-separated mutation key: {instance_id!r}"
         )
     return repository
+
+
+def _normalize_repository_selector(selector: str) -> str:
+    normalized = selector.strip().removeprefix("swesmith/")
+    if not normalized:
+        raise ValueError("Excluded repository selectors must not be empty")
+    return normalized
+
+
+def _matches_repository_selector(repository: str, selector: str) -> bool:
+    """Match either one snapshot or every snapshot of an owner/repository."""
+
+    return repository == selector or repository.startswith(f"{selector}.")
 
 
 def repository_covering_subset(
@@ -117,6 +130,7 @@ def write_task_subsets(
     trajectory_subset_size: int = DEFAULT_TRAJECTORY_SUBSET_SIZE,
     validation_subset_size: int = DEFAULT_VALIDATION_SUBSET_SIZE,
     validation_screening_sizes: tuple[int, ...] | None = None,
+    excluded_validation_repositories: tuple[str, ...] = (),
     seed: int = DEFAULT_SPLIT_SEED,
 ) -> dict[str, Any]:
     """Write training, validation, and cache-union task-ID files."""
@@ -128,6 +142,42 @@ def write_task_subsets(
     if train_repositories & validation_repositories:
         raise ValueError("Source train and validation memberships must be repository-disjoint")
 
+    exclusion_selectors = tuple(
+        dict.fromkeys(
+            _normalize_repository_selector(selector)
+            for selector in excluded_validation_repositories
+        )
+    )
+    matched_excluded_repositories = sorted(
+        repository
+        for repository in validation_repositories
+        if any(
+            _matches_repository_selector(repository, selector)
+            for selector in exclusion_selectors
+        )
+    )
+    unmatched_selectors = [
+        selector
+        for selector in exclusion_selectors
+        if not any(
+            _matches_repository_selector(repository, selector)
+            for repository in validation_repositories
+        )
+    ]
+    if unmatched_selectors:
+        raise ValueError(
+            "Excluded validation repositories did not match the validation parent: "
+            + ", ".join(unmatched_selectors)
+        )
+    matched_excluded_repository_set = set(matched_excluded_repositories)
+    eligible_validation_ids = [
+        instance_id
+        for instance_id in validation_ids
+        if _repository_snapshot(instance_id) not in matched_excluded_repository_set
+    ]
+    if not eligible_validation_ids:
+        raise ValueError("Repository exclusions removed every validation instance")
+
     trajectory_ids = repository_covering_subset(
         train_ids,
         size=trajectory_subset_size,
@@ -135,7 +185,7 @@ def write_task_subsets(
         namespace="trajectory",
     )
     selected_validation_ids = repository_covering_subset(
-        validation_ids,
+        eligible_validation_ids,
         size=validation_subset_size,
         seed=seed,
         namespace="validation",
@@ -157,7 +207,7 @@ def write_task_subsets(
     previous_ids: set[str] = set()
     for size in screening_sizes:
         screening_ids = repository_covering_subset(
-            validation_ids,
+            eligible_validation_ids,
             size=size,
             seed=seed,
             namespace="validation",
@@ -234,6 +284,12 @@ def write_task_subsets(
         "selection": "sha256_hash_rank_without_replacement",
         "ordering": "sha256_hash_order",
         "seed": seed,
+        "validation_exclusions": {
+            "selectors": list(exclusion_selectors),
+            "matched_repositories": matched_excluded_repositories,
+            "n_excluded_tasks": len(validation_ids) - len(eligible_validation_ids),
+            "n_eligible_tasks": len(eligible_validation_ids),
+        },
         "trajectory": {
             "source": "train_instance_ids.txt",
             "file": str(trajectory_path),
@@ -355,6 +411,9 @@ def prepare_swesmith_splits(args: argparse.Namespace) -> dict[str, Any]:
             "validation_subset_size",
             DEFAULT_VALIDATION_SUBSET_SIZE,
         ),
+        excluded_validation_repositories=tuple(
+            getattr(args, "exclude_repository", ())
+        ),
         seed=args.seed,
     )
 
@@ -436,6 +495,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--validation-instance-ids-file",
         default="data/splits/validation_instance_ids.txt",
     )
+    parser.add_argument(
+        "--exclude-repository",
+        action="append",
+        default=[],
+        metavar="REPOSITORY",
+        help=(
+            "Exclude a repository from derived validation subsets. Repeat for "
+            "multiple repositories. Accepts an exact owner__repo.commit snapshot "
+            "or owner__repo to exclude all of its snapshots; an optional "
+            "'swesmith/' prefix is ignored."
+        ),
+    )
     return parser
 
 
@@ -448,6 +519,7 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=args.output_dir,
             trajectory_subset_size=args.trajectory_subset_size,
             validation_subset_size=args.validation_subset_size,
+            excluded_validation_repositories=tuple(args.exclude_repository),
             seed=args.seed,
         )
         manifest_path = Path(args.output_dir) / "swesmith_py_split_manifest.json"

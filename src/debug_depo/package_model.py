@@ -8,6 +8,8 @@ import os
 import uuid
 from pathlib import Path
 
+from debug_depo.utils import requires_mistral_regex_fix
+
 
 def package_model(
     base_model: str,
@@ -19,7 +21,7 @@ def package_model(
 ) -> dict[str, str]:
     import torch
     from peft import PeftModel
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
     adapter = Path(adapter_path).expanduser().resolve()
     output = Path(output_dir).expanduser().resolve()
@@ -31,9 +33,14 @@ def package_model(
         os.replace(output, preserved)
     staging = output.with_name(f".{output.name}.staging-{uuid.uuid4().hex}")
     staging.mkdir()
+    model_config = AutoConfig.from_pretrained(
+        base_model,
+        trust_remote_code=trust_remote_code,
+    )
     model = AutoModelForCausalLM.from_pretrained(
         base_model,
-        torch_dtype=torch.bfloat16,
+        config=model_config,
+        dtype=torch.bfloat16,
         low_cpu_mem_usage=True,
         trust_remote_code=trust_remote_code,
     )
@@ -49,6 +56,7 @@ def package_model(
     tokenizer = AutoTokenizer.from_pretrained(
         tokenizer_source,
         trust_remote_code=trust_remote_code,
+        fix_mistral_regex=requires_mistral_regex_fix(model_config),
     )
     tokenizer.save_pretrained(staging)
     manifest = {

@@ -17,19 +17,20 @@ project. All files were generated from dataset revision
   used as the initial Hyperstack collection. Its ordered-file SHA-256 is
   `4d60dbdc69aca4a1704d8c23ed0a72161e96fe93d077212aedb68e1312412965`.
 - `swesmith_validation_500_instance_ids.txt`: the validation sample, drawn
-  only from `validation_instance_ids.txt` and covering all 14 validation
-  repository snapshots.
+  only from `validation_instance_ids.txt` after excluding the unusable
+  `stanfordnlp__string2string.c4a72f59` image, and covering the other 13
+  validation repository snapshots.
 - `swesmith_validation_100_instance_ids.txt` and
   `swesmith_validation_200_instance_ids.txt`: deterministic nested screening
   budgets for the DMPO/DEPO
   [hyperparameter sweep](../../docs/hyperparameter-sweep.md). Both
-  cover all 14 validation repository snapshots, the 100-task sample is a
+  cover all 13 eligible validation repository snapshots, the 100-task sample is a
   subset of the 200-task sample, and both are subsets of the tracked
   500-task sample.
 - `swesmith_cache_5500_instance_ids.txt`: the exact union of the 5,000
   trajectory tasks and 500 validation tasks. Use this to prebuild the cache.
-  The cache builder deduplicates these task IDs into 131 SWE-smith
-  repository-image SIFs.
+  The cache builder deduplicates these task IDs into 130 usable SWE-smith
+  repository-image SIFs. The excluded image is not required by these subsets.
 - `swesmith_py_split_manifest.json`: dataset revision, policies, counts,
   memberships, and ordered-file SHA-256 hashes for the parent memberships and
   every tracked 5,000/500/200/100 subset.
@@ -76,6 +77,13 @@ possible while ensuring that small repositories are not absent. SHA-256
 ranking supplies reproducible pseudo-random sampling; it is not intended for
 cryptographic secrecy.
 
+The tracked validation subsets exclude
+`stanfordnlp__string2string.c4a72f59` because its upstream image does not
+contain the synthetic task branches. The exclusion applies only while deriving
+the 100/200/500 task samples; the original 14-repository validation parent is
+left unchanged for provenance. Replacement tasks are sampled from the other 13
+held-out repositories, never from the training membership.
+
 ## Regeneration
 
 Regenerate the 5,000-task training sample, nested 100/200/500 validation
@@ -83,7 +91,9 @@ samples, cache union, and their manifest provenance from the tracked parent
 memberships without downloading the dataset:
 
 ```bash
-uv run debug-depo-prepare-swesmith-splits --subsets-only
+uv run debug-depo-prepare-swesmith-splits \
+  --subsets-only \
+  --exclude-repository stanfordnlp__string2string.c4a72f59
 ```
 
 Regenerate the parent 90/10 memberships and all derived files from the pinned
@@ -108,7 +118,7 @@ ID files together if the dataset revision, seed, or sizes change.
 
 ## Cluster usage
 
-Build all 500 SWE-bench Verified images and the 131 SWE-smith images needed by
+Build all 500 SWE-bench Verified images and the 130 SWE-smith images needed by
 the selected 5,500 tasks:
 
 ```bash

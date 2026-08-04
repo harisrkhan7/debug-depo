@@ -8,6 +8,7 @@ set -euo pipefail
 #   REMOTE_RUNS_DIR=/rds/.../debug-depo/runs bash cluster/pull_cluster_artifacts.sh
 #   LOCAL_DIR=scratch/cluster-runs bash cluster/pull_cluster_artifacts.sh
 #   PULL_CACHE_BUILDS=0 bash cluster/pull_cluster_artifacts.sh
+#   PULL_EXPERIMENT_MODELS=1 bash cluster/pull_cluster_artifacts.sh
 #   PULL_EVAL=1 RUN_ID=cluster_smoke_astropy_12907 bash cluster/pull_cluster_artifacts.sh
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -68,6 +69,20 @@ rsync_args=(
   --exclude "__pycache__"
 )
 
+# Keep experiment metadata available locally without pulling packaged model
+# shards or heavyweight training state. Opt in when the model payloads are
+# actually needed.
+if [[ "${PULL_EXPERIMENT_MODELS:-0}" != "1" ]]; then
+  rsync_args+=(
+    --exclude "**/experiments/**/*.safetensors"
+    --exclude "**/experiments/**/*.bin"
+    --exclude "**/experiments/**/*.pt"
+    --exclude "**/experiments/**/*.pth"
+    --exclude "**/experiments/**/*.ckpt"
+    --exclude "**/experiments/**/*.gguf"
+  )
+fi
+
 if "$RSYNC_BIN" --help 2>&1 | grep -q -- "--protect-args"; then
   rsync_args+=(--protect-args)
 fi
@@ -98,6 +113,8 @@ Into:
 
 Override REMOTE, REMOTE_RUNS_DIR, REMOTE_CACHE_BUILDS_DIR, LOCAL_DIR, or
 LOCAL_CACHE_BUILDS_DIR if needed. Set PULL_CACHE_BUILDS=0 to pull only runs.
+Experiment model and checkpoint payloads are skipped by default; set
+PULL_EXPERIMENT_MODELS=1 to include them.
 REMOTE_OUTPUT_DIR remains supported as an alias for REMOTE_RUNS_DIR.
 REMOTE_USER plus REMOTE_HOST remain supported together.
 MSG
@@ -142,6 +159,7 @@ fi
   printf 'local_dir=%s\n' "$LOCAL_DIR"
   printf 'local_cache_builds_dir=%s\n' "$LOCAL_CACHE_BUILDS_DIR"
   printf 'pull_cache_builds=%s\n' "${PULL_CACHE_BUILDS:-1}"
+  printf 'pull_experiment_models=%s\n' "${PULL_EXPERIMENT_MODELS:-0}"
   printf 'cache_builds_status=%s\n' "$cache_builds_status"
   printf 'pull_eval=%s\n' "${PULL_EVAL:-0}"
   if [[ "${PULL_EVAL:-0}" == "1" ]]; then

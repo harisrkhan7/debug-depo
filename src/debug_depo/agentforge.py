@@ -244,6 +244,19 @@ def prepare_miniswe_config(
     model_kwargs["top_p"] = float(config.top_p)
     if config.seed is not None:
         model_kwargs["seed"] = int(config.seed)
+    model_timeout = os.getenv("MINI_SWE_MODEL_TIMEOUT_SECONDS", "").strip()
+    if model_timeout:
+        try:
+            model_timeout_seconds = int(model_timeout)
+        except ValueError as exc:
+            raise AgentForgeRunError(
+                "MINI_SWE_MODEL_TIMEOUT_SECONDS must be a positive integer"
+            ) from exc
+        if model_timeout_seconds < 1:
+            raise AgentForgeRunError(
+                "MINI_SWE_MODEL_TIMEOUT_SECONDS must be a positive integer"
+            )
+        model_kwargs["timeout"] = model_timeout_seconds
 
     uses_singularity = miniswe_uses_singularity(config)
     if uses_singularity:

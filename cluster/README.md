@@ -458,8 +458,11 @@ completed SIFs. It attempts all images, records failures, and exits nonzero if
 any pull failed. Summaries are written under
 `$DEBUG_DEPO_SCRATCH/cache-builds/`. `cluster/pull_cluster_artifacts.sh`
 includes these summaries by default under
-`scratch/cluster-artifacts/cache-builds/`, alongside the complete
-`scratch/cluster-artifacts/runs/` tree. Set `PULL_CACHE_BUILDS=0` to skip them.
+`scratch/cluster-artifacts/cache-builds/`, alongside the
+`scratch/cluster-artifacts/runs/` tree. Large model and checkpoint payloads
+under `experiments/` are skipped by default while metadata is retained; set
+`PULL_EXPERIMENT_MODELS=1` to include them. Set `PULL_CACHE_BUILDS=0` to skip
+cache-build summaries.
 Standalone cache-build PBS logs are stored under
 `$DEBUG_DEPO_SCRATCH/runs/apptainer-cache-{smoke,full}/cluster-logs/`. The
 cache-first pilot helper instead puts its cache log in the pilot run's

@@ -17,6 +17,33 @@ HF_HUB_DISABLE_XET="${HF_HUB_DISABLE_XET:-1}"
 HF_TOKEN_FILE="${HF_TOKEN_FILE:-$HOME/.config/debug-depo/hf_token}"
 read -r -a VLLM_EXTRA_ARGS_ARRAY <<< "${VLLM_EXTRA_ARGS:-}"
 
+# Packaged preference models keep the tokenizer used for training in their
+# adapter directory. Loading it separately avoids a Transformers 4.57.x false
+# positive that treats a locally packaged Qwen3 config as a Mistral tokenizer
+# and recommends replacing Qwen's intentional pre-tokenizer regex.
+VLLM_TOKENIZER="${VLLM_TOKENIZER:-}"
+if [[ -z "$VLLM_TOKENIZER" && -f "$VLLM_MODEL/package_manifest.json" ]]; then
+  project_python="$ROOT_DIR/.venv/bin/python"
+  if [[ -x "$project_python" ]]; then
+    VLLM_TOKENIZER="$(
+      "$project_python" -c '
+import json
+import pathlib
+import sys
+
+manifest = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+adapter = pathlib.Path(str(manifest.get("adapter_path", ""))).expanduser()
+if (adapter / "tokenizer_config.json").is_file():
+    print(adapter)
+' "$VLLM_MODEL/package_manifest.json"
+    )"
+  fi
+fi
+tokenizer_args=()
+if [[ -n "$VLLM_TOKENIZER" ]]; then
+  tokenizer_args=(--tokenizer "$VLLM_TOKENIZER")
+fi
+
 if [[ -z "${HF_TOKEN:-}" && -f "$HF_TOKEN_FILE" ]]; then
   HF_TOKEN="$(<"$HF_TOKEN_FILE")"
   export HF_TOKEN
@@ -71,6 +98,7 @@ apptainer exec --nv \
     --host "$HOST" \
     --port "$PORT" \
     --served-model-name "$SERVED_MODEL_NAME" \
+    "${tokenizer_args[@]}" \
     --max-model-len "$MAX_MODEL_LEN" \
     --gpu-memory-utilization "$VLLM_GPU_MEMORY_UTILIZATION" \
     "${VLLM_EXTRA_ARGS_ARRAY[@]}" \

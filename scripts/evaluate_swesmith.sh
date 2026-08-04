@@ -25,6 +25,7 @@ RUNTIME="${SWESMITH_EVAL_RUNTIME:-apptainer}"
 SIF_DIR="${SWESMITH_APPTAINER_SIF_DIR:-$ROOT_DIR/data/apptainer/swesmith-sifs}"
 APPTAINER_CACHE_DIR="${SWESMITH_APPTAINER_CACHE_DIR:-${APPTAINER_CACHEDIR:-}}"
 MAX_WORKERS="${EVAL_MAX_WORKERS:-4}"
+TIMEOUT="${EVAL_TIMEOUT:-600}"
 
 cd "$ROOT_DIR"
 export PYTHONPATH="$ROOT_DIR/src:$ROOT_DIR/external/SWE-smith${PYTHONPATH:+:$PYTHONPATH}"
@@ -38,6 +39,7 @@ args=(
   --runtime "$RUNTIME"
   --sif-dir "$SIF_DIR"
   --max-workers "$MAX_WORKERS"
+  --timeout "$TIMEOUT"
 )
 if [[ "${DRY_RUN:-0}" != "1" ]]; then
   args+=(--require-complete)
@@ -47,9 +49,6 @@ if [[ -n "$APPTAINER_CACHE_DIR" ]]; then
 fi
 if [[ -n "${TASK_IDS_FILE:-}" ]]; then
   args+=(--instance-ids-file "$TASK_IDS_FILE")
-fi
-if [[ -n "${EVAL_TIMEOUT:-}" ]]; then
-  args+=(--timeout "$EVAL_TIMEOUT")
 fi
 if [[ "${F2P_ONLY:-0}" == "1" ]]; then
   args+=(--f2p-only)

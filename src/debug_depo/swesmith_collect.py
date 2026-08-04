@@ -172,6 +172,29 @@ def collect_swesmith(args: argparse.Namespace) -> dict[str, Any]:
     output_dir = ensure_dir(args.output_dir)
     if args.rollout_workers < 1:
         raise ValueError("rollout_workers must be at least 1")
+    if args.recovery_replicas < 1:
+        raise ValueError("recovery_replicas must be at least 1")
+    recovery_mode = args.recovery_replica_index is not None
+    if recovery_mode:
+        if not 0 <= args.recovery_replica_index < args.recovery_replicas:
+            raise ValueError(
+                "recovery_replica_index must satisfy "
+                "0 <= index < recovery_replicas"
+            )
+        if not args.recovery_run_id or not re.fullmatch(
+            r"[A-Za-z0-9._-]+", args.recovery_run_id
+        ):
+            raise ValueError(
+                "recovery_run_id is required in recovery mode and may contain "
+                "only letters, numbers, dots, underscores, and dashes"
+            )
+        if args.overwrite:
+            raise ValueError("Recovery mode cannot be combined with --overwrite")
+    elif args.recovery_replicas != 1 or args.recovery_run_id is not None:
+        raise ValueError(
+            "recovery_replicas and recovery_run_id require "
+            "--recovery-replica-index"
+        )
     if args.mini_runner == "pool_way" and not args.mock:
         raise ValueError(
             "SWE-smith collection cannot use mini-swe-agent-plus pool_way because "
@@ -260,6 +283,10 @@ def collect_swesmith(args: argparse.Namespace) -> dict[str, Any]:
         "task_instance_ids": [str(task["instance_id"]) for task in tasks],
     }
     manifest_path = output_dir / "collection_manifest.json"
+    if recovery_mode and not manifest_path.exists():
+        raise ValueError(
+            f"Recovery requires an existing collection manifest: {manifest_path}"
+        )
     if manifest_path.exists() and not args.overwrite:
         previous_manifest = read_json(manifest_path)
         if not isinstance(previous_manifest, dict):
@@ -272,11 +299,26 @@ def collect_swesmith(args: argparse.Namespace) -> dict[str, Any]:
                 f"({mismatch_list}). Use a new output directory or --overwrite."
             )
         manifest["created_at"] = previous_manifest.get("created_at", run_at)
-    write_json(manifest_path, manifest)
+    if not recovery_mode:
+        write_json(manifest_path, manifest)
 
     collector_id = f"{os.getpid()}-{run_at}"
-    rollout_events_path = output_dir / "rollout_events.jsonl"
-    active_rollouts_path = output_dir / "active_rollouts.json"
+    if recovery_mode:
+        diagnostic_suffix = (
+            f"recovery-{args.recovery_run_id}-replica-"
+            f"{args.recovery_replica_index}"
+        )
+        rollout_events_path = output_dir / f"rollout_events.{diagnostic_suffix}.jsonl"
+        active_rollouts_path = output_dir / f"active_rollouts.{diagnostic_suffix}.json"
+        diagnostic_context: dict[str, Any] = {
+            "recovery_run_id": args.recovery_run_id,
+            "recovery_replicas": args.recovery_replicas,
+            "recovery_replica_index": args.recovery_replica_index,
+        }
+    else:
+        rollout_events_path = output_dir / "rollout_events.jsonl"
+        active_rollouts_path = output_dir / "active_rollouts.json"
+        diagnostic_context = {}
     diagnostic_lock = threading.Lock()
     active_rollouts: dict[str, dict[str, Any]] = {}
 
@@ -306,6 +348,7 @@ def collect_swesmith(args: argparse.Namespace) -> dict[str, Any]:
                 "at": diagnostic_at,
                 "collector_id": collector_id,
                 "pid": os.getpid(),
+                **diagnostic_context,
             }
         )
         write_active_rollouts(diagnostic_at)
@@ -324,6 +367,7 @@ def collect_swesmith(args: argparse.Namespace) -> dict[str, Any]:
             "event": event,
             "at": event_at,
             "collector_id": collector_id,
+            **diagnostic_context,
             **rollout,
         }
         if status is not None:
@@ -342,11 +386,19 @@ def collect_swesmith(args: argparse.Namespace) -> dict[str, Any]:
             append_diagnostic_event(event_payload)
             write_active_rollouts(event_at)
 
-    jobs = [
+    all_jobs = [
         (task_index, task, sample_index, temperature, temperature_run_index)
         for task_index, task in enumerate(tasks)
         for sample_index, (temperature, temperature_run_index) in enumerate(schedule)
     ]
+    if recovery_mode:
+        jobs = [
+            job
+            for job_index, job in enumerate(all_jobs)
+            if job_index % args.recovery_replicas == args.recovery_replica_index
+        ]
+    else:
+        jobs = all_jobs
 
     def run_one(
         task_index: int,
@@ -412,7 +464,12 @@ def collect_swesmith(args: argparse.Namespace) -> dict[str, Any]:
     results: dict[tuple[int, int], dict[str, Any]] = {}
     progress = tqdm(
         total=len(jobs),
-        desc="SWE-smith trajectories",
+        desc=(
+            f"SWE-smith recovery {args.recovery_replica_index + 1}/"
+            f"{args.recovery_replicas}"
+            if recovery_mode
+            else "SWE-smith trajectories"
+        ),
         unit="rollout",
         disable=not args.progress,
     )
@@ -442,6 +499,43 @@ def collect_swesmith(args: argparse.Namespace) -> dict[str, Any]:
 
     if len(results) != len(jobs):
         raise RuntimeError("Collection ended before every SWE-smith rollout produced a result")
+
+    if recovery_mode:
+        recovery_results = list(results.values())
+        recovery_summary = {
+            "schema_version": 1,
+            "created_at": run_at,
+            "mode": "shard_recovery_replica",
+            "recovery_run_id": args.recovery_run_id,
+            "recovery_replicas": args.recovery_replicas,
+            "recovery_replica_index": args.recovery_replica_index,
+            "num_shards": args.num_shards,
+            "shard_index": args.shard_index,
+            "n_assigned_rollouts": len(jobs),
+            "n_finished": sum(
+                result.get("status") in FINISHED_ROLLOUT_STATUSES
+                for result in recovery_results
+            ),
+            "n_errors": sum(
+                result.get("status") == "error" for result in recovery_results
+            ),
+        }
+        recovery_summary_path = output_dir / (
+            f"recovery-{args.recovery_run_id}-replica-"
+            f"{args.recovery_replica_index}.json"
+        )
+        write_json(recovery_summary_path, recovery_summary)
+        print(json.dumps(recovery_summary, indent=2))
+        if (
+            args.require_complete
+            and recovery_summary["n_finished"] != len(recovery_results)
+        ):
+            raise RuntimeError(
+                "SWE-smith recovery replica did not finish every assigned rollout: "
+                f"{recovery_summary['n_finished']}/{len(recovery_results)} finished, "
+                f"{recovery_summary['n_errors']} errors"
+            )
+        return recovery_summary
 
     all_results: list[dict[str, Any]] = []
     sample_summaries: list[dict[str, Any]] = []
@@ -612,6 +706,9 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=int(os.getenv("ROLLOUT_WORKERS", "4")),
     )
+    parser.add_argument("--recovery-replicas", type=int, default=1)
+    parser.add_argument("--recovery-replica-index", type=int)
+    parser.add_argument("--recovery-run-id")
     parser.add_argument("--max-steps", type=int, default=int(os.getenv("MAX_STEPS", DEFAULT_MAX_STEPS)))
     parser.add_argument(
         "--context-length",

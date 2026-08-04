@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Pull the complete persistent Cloud scratch tree for local inspection.
-# SIF backups, rebuildable caches, and temporary files are outside scratch.
+# Pull the persistent Cloud scratch tree for local inspection. SIF backups,
+# rebuildable caches, and temporary files are outside scratch. Large experiment
+# model/checkpoint payloads are excluded by default.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 if [[ -f "$ROOT_DIR/cloud/local.env" ]]; then
@@ -36,6 +37,16 @@ rsync_args=(
   -az
   --human-readable
 )
+if [[ "${PULL_EXPERIMENT_MODELS:-0}" != "1" ]]; then
+  rsync_args+=(
+    --exclude "**/experiments/**/*.safetensors"
+    --exclude "**/experiments/**/*.bin"
+    --exclude "**/experiments/**/*.pt"
+    --exclude "**/experiments/**/*.pth"
+    --exclude "**/experiments/**/*.ckpt"
+    --exclude "**/experiments/**/*.gguf"
+  )
+fi
 if "$RSYNC_BIN" --help 2>&1 | grep -q -- "--protect-args"; then
   rsync_args+=(--protect-args)
 fi
@@ -52,16 +63,18 @@ if [[ "$DELETE" == "1" ]]; then
 fi
 
 cat <<MSG
-Pulling the complete cloud scratch tree:
+Pulling the cloud scratch tree:
   source:      $CLOUD_REMOTE:$CLOUD_REMOTE_SCRATCH_DIR/
   destination: $LOCAL_CLOUD_SCRATCH_DIR/
   dry run:     $DRY_RUN
   delete:      $DELETE
+  experiment models: ${PULL_EXPERIMENT_MODELS:-0}
 
 This includes runs, trajectories, merged predictions, evaluations, analyses,
-training checkpoints/models, cache-build summaries, and logs. It does not copy
-the sibling persistent sifs/ directory, ephemeral caches, runtime state, or
-temporary files.
+experiment metadata, cache-build summaries, and logs. Model/checkpoint payloads
+under experiments/ are skipped unless PULL_EXPERIMENT_MODELS=1. The sibling
+persistent sifs/ directory, ephemeral caches, runtime state, and temporary
+files are not copied.
 MSG
 
 "$RSYNC_BIN" "${rsync_args[@]}" \
@@ -74,6 +87,7 @@ if [[ "$DRY_RUN" != "1" ]]; then
     printf 'remote_scratch_dir=%s\n' "$CLOUD_REMOTE_SCRATCH_DIR"
     printf 'local_scratch_dir=%s\n' "$LOCAL_CLOUD_SCRATCH_DIR"
     printf 'delete=%s\n' "$DELETE"
+    printf 'pull_experiment_models=%s\n' "${PULL_EXPERIMENT_MODELS:-0}"
     printf 'pulled_at=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
   } >"$LOCAL_CLOUD_SCRATCH_DIR/_pull_manifest.txt"
 fi

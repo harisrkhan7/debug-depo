@@ -61,6 +61,40 @@ def test_cloud_shell_scripts_parse() -> None:
         assert completed.returncode == 0, f"{path.name}: {completed.stderr}"
 
 
+def test_swesmith_evaluation_timeout_defaults_to_600_and_allows_override(
+    tmp_path: Path,
+) -> None:
+    arguments_file = tmp_path / "uv-arguments"
+    fake_uv = tmp_path / "uv"
+    fake_uv.write_text(
+        "#!/usr/bin/env bash\n"
+        'printf "%s\\n" "$@" >"$UV_ARGUMENTS_FILE"\n',
+        encoding="utf-8",
+    )
+    fake_uv.chmod(0o755)
+    env = {
+        "UV": str(fake_uv),
+        "UV_ARGUMENTS_FILE": str(arguments_file),
+        "PREDICTIONS_PATH": str(tmp_path / "predictions.jsonl"),
+        "SUMMARY_OUTPUT": str(tmp_path / "summary.json"),
+        "LOG_DIR": str(tmp_path / "logs"),
+        "DRY_RUN": "1",
+    }
+
+    completed = run_script("scripts/evaluate_swesmith.sh", env=env)
+    assert completed.returncode == 0, completed.stderr
+    arguments = arguments_file.read_text(encoding="utf-8").splitlines()
+    assert arguments[arguments.index("--timeout") + 1] == "600"
+
+    completed = run_script(
+        "scripts/evaluate_swesmith.sh",
+        env={**env, "EVAL_TIMEOUT": "900"},
+    )
+    assert completed.returncode == 0, completed.stderr
+    arguments = arguments_file.read_text(encoding="utf-8").splitlines()
+    assert arguments[arguments.index("--timeout") + 1] == "900"
+
+
 def test_shard_supervisor_detects_vllm_exit(tmp_path: Path) -> None:
     completed = run_script(
         "-c",
@@ -156,6 +190,7 @@ def test_supported_workflows_complete_dry_runs(tmp_path: Path) -> None:
         ("cloud/run.sh", "pipeline", "swesmith"),
         ("cloud/run.sh", "smoke", "verified"),
         ("cloud/run.sh", "smoke", "swesmith"),
+        ("cloud/run.sh", "recover-shard", "swesmith", "2"),
         ("cloud/run.sh", "trajectory-suite"),
     )
 
@@ -174,6 +209,13 @@ def test_invalid_cloud_configuration_fails_before_work_starts(tmp_path: Path) ->
         (("cloud/build_cache.sh", "smoke"), {"CACHE_BUILD_MAX_WORKERS": "101"}),
         (("cloud/collect.sh", "verified"), {"MINI_SWE_RUNNER": "docker"}),
         (("cloud/evaluate.sh", "swesmith"), {"SWESMITH_EVAL_RUNTIME": "docker"}),
+        (
+            ("cloud/run.sh", "recover-shard", "swesmith", "2"),
+            {
+                "MINI_SWE_MODEL_TIMEOUT_SECONDS": "1200",
+                "CLOUD_SHARD_STALL_TIMEOUT_SECONDS": "600",
+            },
+        ),
     )
 
     for command, invalid_env in invalid_runs:
@@ -220,6 +262,30 @@ def test_cloud_transfers_pass_only_the_intended_trees_to_rsync(tmp_path: Path) -
         f"{destination}/",
     ]
     assert not any("/sifs/" in argument for argument in pull_arguments)
+    for pattern in (
+        "**/experiments/**/*.safetensors",
+        "**/experiments/**/*.bin",
+        "**/experiments/**/*.pt",
+        "**/experiments/**/*.pth",
+        "**/experiments/**/*.ckpt",
+        "**/experiments/**/*.gguf",
+    ):
+        assert pattern in pull_arguments
+
+    pulled_with_models = run_script(
+        "cloud/run.sh",
+        "pull",
+        env={
+            **transfer_env,
+            "CLOUD_REMOTE": "ubuntu@example.test",
+            "CLOUD_REMOTE_PERSISTENT_ROOT": "/lambda/nfs/Debug-Depo/debug-depo-persistent",
+            "LOCAL_CLOUD_SCRATCH_DIR": str(destination),
+            "PULL_EXPERIMENT_MODELS": "1",
+        },
+    )
+    assert pulled_with_models.returncode == 0, pulled_with_models.stderr
+    pull_arguments = arguments_file.read_text(encoding="utf-8").splitlines()
+    assert not any("experiments" in argument for argument in pull_arguments)
 
 
 def test_sif_sync_round_trip_copies_the_complete_tree(tmp_path: Path) -> None:

@@ -10,7 +10,7 @@
   "n_validation": 5099,
   "n_validation_repositories": 14,
   "requested_validation_fraction": 0.1,
-  "schema_version": 3,
+  "schema_version": 4,
   "seed": 42,
   "source_split": "train",
   "strategy": "repository_disjoint_hash_ranked_greedy",
@@ -18,9 +18,9 @@
     "allocation": "one_per_repository_then_greatest_proportional_deficit",
     "cache": {
       "file": "data/splits/swesmith_cache_5500_instance_ids.txt",
-      "n_repositories": 131,
+      "n_repositories": 130,
       "n_tasks": 5500,
-      "sha256": "bb30e676638ee5e1745ff4da73b9096a812d1e2198911652887d2016353d95c7",
+      "sha256": "5c285fbe49f918608fd4483436bcad8feebecf4e5076bb2cedc499d51a7d5a09",
       "sources": [
         "swesmith_train_5000_instance_ids.txt",
         "swesmith_validation_500_instance_ids.txt"
@@ -41,24 +41,34 @@
     },
     "validation": {
       "file": "data/splits/swesmith_validation_500_instance_ids.txt",
-      "n_repositories": 14,
+      "n_repositories": 13,
       "n_tasks": 500,
-      "sha256": "dd6342f7f4cb79ea206f523517fef7f3367f4a779cf0c088abf5b0e91088b154",
+      "sha256": "eab0797ef90dba25ce702ff07aeb0789f37e92739073712759beb9bcea451bd2",
       "source": "validation_instance_ids.txt"
+    },
+    "validation_exclusions": {
+      "matched_repositories": [
+        "stanfordnlp__string2string.c4a72f59"
+      ],
+      "n_eligible_tasks": 4971,
+      "n_excluded_tasks": 128,
+      "selectors": [
+        "stanfordnlp__string2string.c4a72f59"
+      ]
     },
     "validation_screening": {
       "100": {
         "file": "data/splits/swesmith_validation_100_instance_ids.txt",
-        "n_repositories": 14,
+        "n_repositories": 13,
         "n_tasks": 100,
-        "sha256": "99e09b02b651e89282f76b994bac6e82be1776928d5c09d1ce8721806493fcf9",
+        "sha256": "ba2049878ec15f274d18139432ab08b9b4a0777f342a7ebac308ad8f7cb3979e",
         "source": "validation_instance_ids.txt"
       },
       "200": {
         "file": "data/splits/swesmith_validation_200_instance_ids.txt",
-        "n_repositories": 14,
+        "n_repositories": 13,
         "n_tasks": 200,
-        "sha256": "a27dcfa4bafb154f3b70baf51ab50696f6b7e3f978bcc845b2f2d72091c437fb",
+        "sha256": "36fc626d59cede1ea53ae0bb7934f15d5d8d95c5ac2777a57a1ee11bcd94997c",
         "source": "validation_instance_ids.txt"
       }
     }

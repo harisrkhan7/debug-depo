@@ -73,7 +73,7 @@ def test_prepare_swesmith_splits_writes_ids_and_manifest(tmp_path, monkeypatch):
     assert set(train_ids) | set(validation_ids) == {task["instance_id"] for task in tasks}
     assert manifest == read_json(tmp_path / "swesmith_py_split_manifest.json")
     assert manifest["dataset_revision"] == "revision"
-    assert manifest["schema_version"] == 3
+    assert manifest["schema_version"] == 4
     assert manifest["task_subsets"]["trajectory"]["n_tasks"] == 2
     assert manifest["task_subsets"]["validation"]["n_tasks"] == 1
     assert manifest["task_subsets"]["cache"]["n_tasks"] == 3
@@ -182,3 +182,40 @@ def test_default_validation_screening_subsets_are_nested_and_recorded(tmp_path):
     assert metadata["validation_screening"]["100"]["n_tasks"] == 100
     assert metadata["validation_screening"]["200"]["n_tasks"] == 200
     assert len(metadata["validation_screening"]["100"]["sha256"]) == 64
+
+
+def test_write_task_subsets_excludes_repository_from_all_validation_budgets(tmp_path):
+    train_ids = _snapshot_ids("a", 5_000)
+    validation_ids = _snapshot_ids("d", 300) + _snapshot_ids("e", 600)
+
+    metadata = write_task_subsets(
+        train_ids=train_ids,
+        validation_ids=validation_ids,
+        output_dir=tmp_path,
+        excluded_validation_repositories=("owner__d",),
+    )
+
+    memberships = {
+        size: (
+            tmp_path / f"swesmith_validation_{size}_instance_ids.txt"
+        ).read_text().splitlines()
+        for size in (100, 200, 500)
+    }
+    assert set(memberships[100]) <= set(memberships[200]) <= set(memberships[500])
+    assert all(item.startswith("owner__e.") for ids in memberships.values() for item in ids)
+    assert metadata["validation_exclusions"] == {
+        "selectors": ["owner__d"],
+        "matched_repositories": ["owner__d.dddd"],
+        "n_excluded_tasks": 300,
+        "n_eligible_tasks": 600,
+    }
+
+
+def test_write_task_subsets_rejects_unmatched_repository_exclusion(tmp_path):
+    with pytest.raises(ValueError, match="did not match"):
+        write_task_subsets(
+            train_ids=_snapshot_ids("a", 5_000),
+            validation_ids=_snapshot_ids("d", 500),
+            output_dir=tmp_path,
+            excluded_validation_repositories=("owner__missing",),
+        )

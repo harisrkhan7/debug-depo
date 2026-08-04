@@ -27,6 +27,9 @@ project. All files were generated from dataset revision
   cover all 13 eligible validation repository snapshots, the 100-task sample is a
   subset of the 200-task sample, and both are subsets of the tracked
   500-task sample.
+- `swesmith_validation_64_instance_ids.txt`: the fixed 64-instance validation
+  set used for the DMPO/DEPO end-to-end pilot comparison. Its order reproduces
+  the original eight-shard pilot assignment.
 - `swesmith_cache_5500_instance_ids.txt`: the exact union of the 5,000
   trajectory tasks and 500 validation tasks. Use this to prebuild the cache.
   The cache builder deduplicates these task IDs into 130 usable SWE-smith

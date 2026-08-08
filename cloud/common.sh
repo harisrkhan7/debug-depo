@@ -4,6 +4,21 @@ CLOUD_COMMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$CLOUD_COMMON_DIR/env.sh"
 
+# Make the token stored by cluster/save_hf_token.sh available to every cloud
+# workflow, including host-side preference training and model packaging. The
+# Hugging Face libraries do not read the project-specific HF_TOKEN_FILE path
+# themselves.
+if [[ -z "${HF_TOKEN:-}" && -n "${HUGGING_FACE_HUB_TOKEN:-}" ]]; then
+  HF_TOKEN="$HUGGING_FACE_HUB_TOKEN"
+fi
+if [[ -z "${HF_TOKEN:-}" && -s "$HF_TOKEN_FILE" ]]; then
+  HF_TOKEN="$(<"$HF_TOKEN_FILE")"
+fi
+if [[ -n "${HF_TOKEN:-}" ]]; then
+  export HF_TOKEN
+  export HUGGING_FACE_HUB_TOKEN="${HUGGING_FACE_HUB_TOKEN:-$HF_TOKEN}"
+fi
+
 require_command() {
   local command_name="$1"
   local setup_hint="${2:-Run bash cloud/setup.sh first.}"

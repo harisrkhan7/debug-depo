@@ -61,6 +61,52 @@ def test_cloud_shell_scripts_parse() -> None:
         assert completed.returncode == 0, f"{path.name}: {completed.stderr}"
 
 
+def test_cloud_common_exports_saved_hugging_face_token(tmp_path: Path) -> None:
+    token_file = tmp_path / "hf_token"
+    token_file.write_text("hf_saved-token\n", encoding="utf-8")
+
+    completed = run_script(
+        "-c",
+        (
+            "source cloud/common.sh; "
+            'printf "%s\\n" "$HF_TOKEN" "$HUGGING_FACE_HUB_TOKEN"'
+        ),
+        env={
+            "CLOUD_PERSISTENT_ROOT": str(tmp_path / "persistent"),
+            "CLOUD_EPHEMERAL_ROOT": str(tmp_path / "ephemeral"),
+            "HF_TOKEN": "",
+            "HUGGING_FACE_HUB_TOKEN": "",
+            "HF_TOKEN_FILE": str(token_file),
+        },
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.splitlines() == ["hf_saved-token", "hf_saved-token"]
+
+
+def test_cloud_common_preserves_explicit_hugging_face_token(tmp_path: Path) -> None:
+    token_file = tmp_path / "hf_token"
+    token_file.write_text("hf_saved-token", encoding="utf-8")
+
+    completed = run_script(
+        "-c",
+        (
+            "source cloud/common.sh; "
+            'printf "%s\\n" "$HF_TOKEN" "$HUGGING_FACE_HUB_TOKEN"'
+        ),
+        env={
+            "CLOUD_PERSISTENT_ROOT": str(tmp_path / "persistent"),
+            "CLOUD_EPHEMERAL_ROOT": str(tmp_path / "ephemeral"),
+            "HF_TOKEN": "hf_explicit-token",
+            "HUGGING_FACE_HUB_TOKEN": "",
+            "HF_TOKEN_FILE": str(token_file),
+        },
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.splitlines() == ["hf_explicit-token", "hf_explicit-token"]
+
+
 def test_swesmith_evaluation_timeout_defaults_to_600_and_allows_override(
     tmp_path: Path,
 ) -> None:

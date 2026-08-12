@@ -5,12 +5,17 @@ CLOUD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$CLOUD_DIR/common.sh"
 
-VLLM_MODEL="${VLLM_MODEL:-${AGENTFORGE_MODEL:-Kwai-Klear/Klear-AgentForge-8B-SFT}}"
+VLLM_MODEL="${VLLM_MODEL:-${AGENTFORGE_MODEL:-$BASELINE_SFT_MODEL}}"
+VLLM_MODEL_REVISION="${VLLM_MODEL_REVISION:-}"
+if [[ -z "$VLLM_MODEL_REVISION" && "$VLLM_MODEL" == "$BASELINE_SFT_MODEL" ]]; then
+  VLLM_MODEL_REVISION="$BASELINE_SFT_MODEL_REVISION"
+fi
 
 if [[ "${DRY_RUN:-0}" == "1" ]]; then
   cat <<MSG
 Would prefetch the vLLM model serially:
   model:       $VLLM_MODEL
+  revision:    ${VLLM_MODEL_REVISION:-<default branch>}
   cache:       $HF_HUB_CACHE
   hf_transfer: disabled
 MSG
@@ -60,17 +65,18 @@ if [[ -n "${HF_TOKEN:-}" ]]; then
   export APPTAINERENV_HUGGING_FACE_HUB_TOKEN="$HF_TOKEN"
 fi
 
-echo "Prefetching $VLLM_MODEL into $HF_HUB_CACHE ..."
+echo "Prefetching $VLLM_MODEL at ${VLLM_MODEL_REVISION:-the default branch} into $HF_HUB_CACHE ..."
 apptainer exec \
   "${bind_args[@]}" \
   --pwd "$DEBUG_DEPO_ROOT" \
   "$VLLM_IMAGE" \
-  python3 - "$VLLM_MODEL" <<'PY'
+  python3 - "$VLLM_MODEL" "$VLLM_MODEL_REVISION" <<'PY'
 import sys
 
 from huggingface_hub import snapshot_download
 
 model = sys.argv[1]
-path = snapshot_download(repo_id=model)
+revision = sys.argv[2] or None
+path = snapshot_download(repo_id=model, revision=revision)
 print(f"Model cache ready: {path}")
 PY

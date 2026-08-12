@@ -85,7 +85,8 @@ Hold these settings fixed:
 | --- | ---: | --- |
 | Training tasks | 1,000 | Current reduced experiment |
 | Base model | `Kwai-Klear/Klear-AgentForge-8B-SFT` | Current reference policy |
-| Maximum training length | 32,768 | Current memory-tested default |
+| Collection context length | 32,768 | Match the current rollout collection |
+| Maximum training length | 8,192 | Current preference-training budget |
 | Evaluation context length | 32,768 | Match packaged-model evaluation |
 | Maximum evaluation steps | 200 | Current full-evaluation budget |
 | Per-device batch size | 1 | Long-context memory constraint |
@@ -314,7 +315,7 @@ DMPO_TRIAL_NAME=g07-lr1e6-b01-ga16 \
 DMPO_GAMMA=0.7 \
 DMPO_LEARNING_RATE=1e-6 \
 DMPO_BETA=0.1 \
-MAX_LENGTH=32768 \
+MAX_LENGTH=8192 \
 PER_DEVICE_BATCH_SIZE=1 \
 GRADIENT_ACCUMULATION_STEPS=16 \
 EPOCHS=3 \
@@ -333,7 +334,7 @@ ALPHA_TOKENS=2 \
 ALPHA_STEPS=2 \
 DEPO_LEARNING_RATE=2e-5 \
 DEPO_BETA=0.2 \
-MAX_LENGTH=32768 \
+MAX_LENGTH=8192 \
 PER_DEVICE_BATCH_SIZE=1 \
 GRADIENT_ACCUMULATION_STEPS=16 \
 EPOCHS=3 \

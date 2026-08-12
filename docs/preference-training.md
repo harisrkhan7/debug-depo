@@ -118,8 +118,14 @@ isolate checkpoints, packages, and evaluations while sharing
 and data hash; incompatible resume attempts fail. Checkpoint promotion,
 packaging, and completed-run reuse are atomic.
 
-Collection retains the target run's 65,536-token context. Training and packaged
-evaluation default to `MAX_LENGTH=32768`; tune this for GPU memory. The builders
+Training loss is written to `training/training_metrics.jsonl` at each logging
+interval (five optimizer steps by default), with the learning rate, epoch, and
+number of contributing micro-batches. The final partial interval is also
+recorded, and resume trims observations newer than the selected checkpoint.
+
+The current experiment collects and evaluates with a 32,768-token context and
+trains with `MAX_LENGTH=8192`. Keep collection and evaluation aligned while
+setting the shorter training limit explicitly. The builders
 select four temperature-balanced slots per task: `0,1,4,5` for the current
 two-temperature layout or `0,4,8,12` for four temperatures. Override with
 `PREFERENCE_SAMPLE_INDICES`, or set `PREFERENCE_MAX_ROLLOUTS=0` for all
@@ -144,6 +150,8 @@ RUN_NAME=swesmith-pilot-20260719 \
 RUN_NAME=swesmith-pilot-20260719 \
 EXPERIMENT_ARM=dmpo \
 DMPO_TRIAL_NAME=gamma07 \
+MAX_LENGTH=8192 \
+EVAL_CONTEXT_LENGTH=32768 \
 cluster/submit_preference_training.sh
 ```
 
@@ -155,6 +163,8 @@ EXPERIMENT_ARM=dmpo-depo \
 DMPO_MODE=reuse \
 DMPO_TRIAL_NAME=gamma07 \
 DEPO_TRIAL_NAME=alpha2 \
+MAX_LENGTH=8192 \
+EVAL_CONTEXT_LENGTH=32768 \
 cluster/submit_preference_training.sh
 ```
 
@@ -185,12 +195,14 @@ Preview independent held-out evaluation:
 PREFERENCE_OBJECTIVE=dmpo \
 EXPERIMENT_ARM=dmpo \
 TRAIN_RUN_NAME=swesmith-train-5000 \
+EVAL_CONTEXT_LENGTH=32768 \
 DRY_RUN=1 \
 cluster/submit_preference_evaluation.sh
 
 PREFERENCE_OBJECTIVE=depo \
 EXPERIMENT_ARM=dmpo-depo \
 TRAIN_RUN_NAME=swesmith-train-5000 \
+EVAL_CONTEXT_LENGTH=32768 \
 DRY_RUN=1 \
 cluster/submit_preference_evaluation.sh
 ```

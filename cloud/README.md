@@ -11,10 +11,14 @@ Key defaults are defined in `cloud/env.sh`:
 | GPUs and collection shards | All detected GPUs; one shard per GPU |
 | Trajectory workers | 8 per shard |
 | Cache-build workers | 50 (maximum 100) |
-| Evaluation workers | 80 |
+| Evaluation workers | 100 |
 | Training processes | One per detected GPU |
 
 Run `bash cloud/run.sh help` for the complete command list.
+
+The baseline SFT repository is pinned to Hugging Face revision
+`0da97e45dbbd44278bd55b878170ec369d2934fb`. Override
+`VLLM_MODEL_REVISION` only when deliberately testing another model snapshot.
 
 ## Storage
 
@@ -88,6 +92,12 @@ Results are copied to `scratch/cloud/` by default. Set
 caches are not included in this transfer. Large model and checkpoint payloads
 under `runs/*/experiments/` are also skipped by default while experiment
 metadata is retained. Set `PULL_EXPERIMENT_MODELS=1` to include those payloads.
+To retrieve only the much smaller LoRA/PEFT adapter directories while keeping
+merged models and checkpoints excluded, run:
+
+```bash
+PULL_MODEL_ADAPTERS=true bash cloud/run.sh pull
+```
 
 ## Model and SIF caches
 
@@ -309,7 +319,7 @@ RUNS_PER_TEMPERATURE=2 \
 TEMPERATURES=0.6:0.7 \
 BASE_SEED=42 \
 MAX_STEPS=200 \
-CONTEXT_LENGTH=65536 \
+CONTEXT_LENGTH=32768 \
 TIMEOUT_SECONDS=21600 \
 MINI_SWE_MODEL_TIMEOUT_SECONDS=1200 \
 CLOUD_SHARD_STALL_TIMEOUT_SECONDS=1500 \

@@ -715,7 +715,8 @@ Set `EXPERIMENT_ARM=dmpo` or `depo` for either single-method branch. Preview
 the default sequential arm before submission:
 
 ```bash
-RUN_NAME=swesmith-pilot-20260719 EXPERIMENT_ARM=dmpo-depo DRY_RUN=1 \
+RUN_NAME=swesmith-pilot-20260719 EXPERIMENT_ARM=dmpo-depo \
+MAX_LENGTH=8192 EVAL_CONTEXT_LENGTH=32768 DRY_RUN=1 \
   cluster/submit_preference_training.sh
 ```
 
@@ -733,8 +734,9 @@ The default chain requests:
 The overlapping builders use four CPUs and 96 GB aggregate host
 memory; each training job uses one GPU, eight CPUs, and 64 GB host memory. The
 reservation ceiling is 96 GPU-hours; actual use ends when each job finishes. A
-high-memory GPU is recommended for the 8B model at 32K. If a pilot runs out of
-device memory, reduce `MAX_LENGTH` before requesting more GPUs.
+high-memory GPU is recommended for the 8B model. The current experiment trains
+at 8K; if a pilot runs out of device memory, reduce `MAX_LENGTH` before
+requesting more GPUs.
 
 Packaging is CPU-only, so each GPU allocation ends as soon as training
 finishes. By default, each completed package is evaluated on the existing
@@ -774,9 +776,10 @@ choice, or `PREFERENCE_MAX_ROLLOUTS=0` to use every collected rollout. DMPO and
 DEPO receive the same selection. The submission wrapper also accepts commas
 and converts them to the colon form required inside `qsub -v`.
 
-Collection keeps the target run's 65,536-token context default. Preference
-training and packaged-model evaluation default to 32,768 tokens, so training a
-64K collection can truncate long trajectories. Training defaults to bf16,
+The current experiment collects and evaluates at 32,768 tokens and trains at
+8,192 tokens, so preference training can truncate long trajectories from the
+32K collection. Set these lengths explicitly when submitting jobs. Training
+uses bf16,
 PyTorch SDPA, gradient checkpointing, one trajectory per device, and gradient
 accumulation of 32 on the one-GPU template. Shared preference defaults live in
 `scripts/preference_defaults.sh`. Checkpoints are written to temporary
@@ -816,6 +819,8 @@ Train and assess DMPO first:
 RUN_NAME=swesmith-train-5000 \
 EXPERIMENT_ARM=dmpo \
 DMPO_TRIAL_NAME=gamma07 \
+MAX_LENGTH=8192 \
+EVAL_CONTEXT_LENGTH=32768 \
 cluster/submit_preference_training.sh
 ```
 
@@ -827,6 +832,8 @@ EXPERIMENT_ARM=dmpo-depo \
 DMPO_MODE=reuse \
 DMPO_TRIAL_NAME=gamma07 \
 DEPO_TRIAL_NAME=alpha2 \
+MAX_LENGTH=8192 \
+EVAL_CONTEXT_LENGTH=32768 \
 cluster/submit_preference_training.sh
 ```
 

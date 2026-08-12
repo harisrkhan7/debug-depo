@@ -30,6 +30,15 @@ LOCAL_CLOUD_SCRATCH_DIR="${LOCAL_CLOUD_SCRATCH_DIR:-${LOCAL_HYPERSTACK_SCRATCH_D
 DRY_RUN="${DRY_RUN:-0}"
 DELETE="${DELETE:-0}"
 RSYNC_BIN="${RSYNC_BIN:-rsync}"
+PULL_MODEL_ADAPTERS="${PULL_MODEL_ADAPTERS:-false}"
+case "$PULL_MODEL_ADAPTERS" in
+  1|true|TRUE) pull_model_adapters=1 ;;
+  0|false|FALSE) pull_model_adapters=0 ;;
+  *)
+    echo "PULL_MODEL_ADAPTERS must be true or false, got: $PULL_MODEL_ADAPTERS" >&2
+    exit 2
+    ;;
+esac
 
 mkdir -p "$LOCAL_CLOUD_SCRATCH_DIR"
 
@@ -38,6 +47,13 @@ rsync_args=(
   --human-readable
 )
 if [[ "${PULL_EXPERIMENT_MODELS:-0}" != "1" ]]; then
+  if [[ "$pull_model_adapters" == "1" ]]; then
+    # Rsync uses the first matching filter rule, so these adapter payloads are
+    # admitted before the broad experiment-model exclusions below.
+    rsync_args+=(
+      --include "**/experiments/**/adapter/***"
+    )
+  fi
   rsync_args+=(
     --exclude "**/experiments/**/*.safetensors"
     --exclude "**/experiments/**/*.bin"
@@ -69,10 +85,13 @@ Pulling the cloud scratch tree:
   dry run:     $DRY_RUN
   delete:      $DELETE
   experiment models: ${PULL_EXPERIMENT_MODELS:-0}
+  model adapters:    $PULL_MODEL_ADAPTERS
 
 This includes runs, trajectories, merged predictions, evaluations, analyses,
 experiment metadata, cache-build summaries, and logs. Model/checkpoint payloads
-under experiments/ are skipped unless PULL_EXPERIMENT_MODELS=1. The sibling
+under experiments/ are skipped unless PULL_EXPERIMENT_MODELS=1. Set
+PULL_MODEL_ADAPTERS=true to copy only adapter directories while continuing to
+skip merged models and checkpoints. The sibling
 persistent sifs/ directory, ephemeral caches, runtime state, and temporary
 files are not copied.
 MSG
@@ -88,6 +107,7 @@ if [[ "$DRY_RUN" != "1" ]]; then
     printf 'local_scratch_dir=%s\n' "$LOCAL_CLOUD_SCRATCH_DIR"
     printf 'delete=%s\n' "$DELETE"
     printf 'pull_experiment_models=%s\n' "${PULL_EXPERIMENT_MODELS:-0}"
+    printf 'pull_model_adapters=%s\n' "$PULL_MODEL_ADAPTERS"
     printf 'pulled_at=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
   } >"$LOCAL_CLOUD_SCRATCH_DIR/_pull_manifest.txt"
 fi

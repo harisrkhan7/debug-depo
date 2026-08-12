@@ -50,6 +50,11 @@ case "$OBJECTIVE" in
     ;;
 esac
 
+MODEL_REVISION="${MODEL_REVISION:-}"
+if [[ -z "$MODEL_REVISION" && "$MODEL_NAME_OR_PATH" == "$PREFERENCE_BASE_MODEL_DEFAULT" ]]; then
+  MODEL_REVISION="$PREFERENCE_BASE_MODEL_REVISION_DEFAULT"
+fi
+
 NUM_PROCESSES="${NUM_PROCESSES:-${PBS_NGPUS:-$PREFERENCE_NUM_PROCESSES_DEFAULT}}"
 MAX_LENGTH="${MAX_LENGTH:-$PREFERENCE_TRAIN_MAX_LENGTH_DEFAULT}"
 MAX_TRAIN_ROWS="${MAX_TRAIN_ROWS:-0}"
@@ -89,6 +94,9 @@ args=(
   --save-steps "$SAVE_STEPS"
   --expected-num-processes "$NUM_PROCESSES"
 )
+if [[ -n "$MODEL_REVISION" ]]; then
+  args+=(--model-revision "$MODEL_REVISION")
+fi
 if [[ "$OBJECTIVE" == "dmpo" ]]; then
   args+=(--gamma "$GAMMA")
 else
@@ -125,6 +133,9 @@ if [[ "${PACKAGE_MODEL:-1}" == "1" ]]; then
       --adapter-path "$TRAIN_OUTPUT_DIR/adapter"
       --output-dir "$PACKAGE_OUTPUT_DIR"
     )
+    if [[ -n "$MODEL_REVISION" ]]; then
+      package_args+=(--base-model-revision "$MODEL_REVISION")
+    fi
     if [[ "${TRUST_REMOTE_CODE:-0}" == "1" ]]; then
       package_args+=(--trust-remote-code)
     fi

@@ -6,7 +6,11 @@ export DEBUG_DEPO_ROOT="${DEBUG_DEPO_ROOT:-$ROOT_DIR}"
 source "$ROOT_DIR/cluster/env/load.sh"
 
 VLLM_IMAGE="${VLLM_IMAGE:-$ROOT_DIR/cluster/apptainer/vllm-openai.sif}"
-VLLM_MODEL="${VLLM_MODEL:-${AGENTFORGE_MODEL:-Kwai-Klear/Klear-AgentForge-8B-SFT}}"
+VLLM_MODEL="${VLLM_MODEL:-${AGENTFORGE_MODEL:-$BASELINE_SFT_MODEL}}"
+VLLM_MODEL_REVISION="${VLLM_MODEL_REVISION:-}"
+if [[ -z "$VLLM_MODEL_REVISION" && "$VLLM_MODEL" == "$BASELINE_SFT_MODEL" ]]; then
+  VLLM_MODEL_REVISION="$BASELINE_SFT_MODEL_REVISION"
+fi
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8000}"
 STARTUP_TIMEOUT="${STARTUP_TIMEOUT:-7200}"
@@ -42,6 +46,10 @@ fi
 tokenizer_args=()
 if [[ -n "$VLLM_TOKENIZER" ]]; then
   tokenizer_args=(--tokenizer "$VLLM_TOKENIZER")
+fi
+revision_args=()
+if [[ -n "$VLLM_MODEL_REVISION" ]]; then
+  revision_args=(--revision "$VLLM_MODEL_REVISION")
 fi
 
 if [[ -z "${HF_TOKEN:-}" && -f "$HF_TOKEN_FILE" ]]; then
@@ -95,6 +103,7 @@ apptainer exec --nv \
   --pwd "$ROOT_DIR" \
   "$VLLM_IMAGE" \
   vllm serve "$VLLM_MODEL" \
+    "${revision_args[@]}" \
     --host "$HOST" \
     --port "$PORT" \
     --served-model-name "$SERVED_MODEL_NAME" \

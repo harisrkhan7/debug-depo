@@ -78,12 +78,15 @@ def test_package_preserves_interrupted_output_and_promotes_complete_model(
         ),
     )
 
-    manifest = package_model("base", adapter, output)
+    manifest = package_model("base", adapter, output, base_model_revision="base-commit")
 
     assert manifest["format"] == "standalone_huggingface_model"
+    assert manifest["base_model_revision"] == "base-commit"
+    assert calls["model"]["revision"] == "base-commit"
     assert calls["model"]["dtype"] == "bf16"
     assert "torch_dtype" not in calls["model"]
     assert calls["tokenizer"]["fix_mistral_regex"] is False
+    assert calls["tokenizer"]["revision"] == "base-commit"
     assert (output / "package_manifest.json").is_file()
     assert (output / "model.safetensors").read_text(encoding="utf-8") == "complete"
     preserved = list(tmp_path.glob(".model.incomplete-*"))

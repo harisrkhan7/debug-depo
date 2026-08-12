@@ -1,10 +1,14 @@
+import json
+
 import pytest
 
 from debug_depo.preference_training import (
     EpochShuffleSampler,
     PreferenceDataset,
+    _append_training_metric,
     _ensure_compatible_trial_config,
     _latest_checkpoint,
+    _prepare_training_metrics,
     depo_efficiency_bonus,
     dmpo_turn_weights,
     tokenize_trajectory,
@@ -67,6 +71,19 @@ def test_latest_checkpoint_ignores_interrupted_higher_number(tmp_path):
     interrupted.mkdir()
 
     assert _latest_checkpoint(tmp_path) == complete
+
+
+def test_training_metrics_are_persisted_and_trimmed_to_resume_checkpoint(tmp_path):
+    metrics_path = tmp_path / "training_metrics.jsonl"
+    _prepare_training_metrics(metrics_path, None)
+    _append_training_metric(metrics_path, {"global_step": 5, "loss": 0.5})
+    _append_training_metric(metrics_path, {"global_step": 10, "loss": 0.4})
+
+    _prepare_training_metrics(metrics_path, 5)
+
+    assert [json.loads(line) for line in metrics_path.read_text().splitlines()] == [
+        {"global_step": 5, "loss": 0.5}
+    ]
 
 
 def test_epoch_shuffle_is_exact_when_resuming_later_epochs():

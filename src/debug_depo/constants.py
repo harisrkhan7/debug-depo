@@ -11,6 +11,7 @@ DEFAULT_SWESMITH_DATASET_REVISION = "77cab9055d42ab4a5c25c89a8f937096db13558e"
 
 # Override this if Kwai/Klear release the checkpoint under a different namespace.
 DEFAULT_AGENTFORGE_MODEL = "Kwai-Klear/Klear-AgentForge-8B-SFT"
+DEFAULT_AGENTFORGE_MODEL_REVISION = "0da97e45dbbd44278bd55b878170ec369d2934fb"
 DEFAULT_LOCAL_SMOKE_MODEL = "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit"
 
 # Repository-pinned comparison target for Klear-AgentForge-8B-SFT.

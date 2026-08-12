@@ -3,6 +3,7 @@
 # Shared defaults for preference data, training, packaging, and evaluation.
 # Callers may override every value through the corresponding environment variable.
 PREFERENCE_BASE_MODEL_DEFAULT="Kwai-Klear/Klear-AgentForge-8B-SFT"
+PREFERENCE_BASE_MODEL_REVISION_DEFAULT="0da97e45dbbd44278bd55b878170ec369d2934fb"
 PREFERENCE_MAX_ROLLOUTS_DEFAULT=4
 PREFERENCE_TRAIN_MAX_LENGTH_DEFAULT=32768
 PREFERENCE_EVAL_CONTEXT_LENGTH_DEFAULT=32768

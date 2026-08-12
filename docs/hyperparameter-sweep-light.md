@@ -17,9 +17,9 @@ Select one DMPO and one DMPO -> DEPO model
 Validate those two models on 500 tasks
 ```
 
-The plan requires at most five training runs:
+The plan requires at most six training runs:
 
-- two DMPO configurations;
+- three DMPO configurations;
 - three DEPO configurations, all initialized from the selected DMPO model.
 
 At 500 tasks, evaluate only the selected DMPO and selected DMPO-to-DEPO models.
@@ -34,8 +34,9 @@ Do not vary these settings:
 | Setting | Value |
 | --- | ---: |
 | Training tasks | 1,000 |
+| Collection context length | 32,768 for every rollout |
 | Training sequence length | 8,192 for DMPO and DEPO |
-| Evaluation context length | 8,192 for every arm |
+| Evaluation context length | 32,768 for every arm |
 | Epochs | 3 |
 | Per-device batch size | 1 |
 | Gradient accumulation | 32 |
@@ -52,7 +53,7 @@ Use the fixed repository split files:
 
 Build the preference data once and reuse it for every trial.
 
-## Stage 1: two DMPO trials
+## Stage 1: three DMPO trials
 
 Keep the learning rate and beta fixed. Test only `gamma`, the DMPO-specific
 parameter controlling how strongly later agent turns are discounted.
@@ -61,10 +62,11 @@ parameter controlling how strongly later agent turns are discounted.
 | --- | ---: | ---: | ---: | --- |
 | `g07-paper-informed` | `1e-6` | `0.1` | `0.7` | Current paper-informed default |
 | `g09-late-turns` | `1e-6` | `0.1` | `0.9` | Gives later actions more influence |
+| `g05-early-turns` | `1e-6` | `0.1` | `0.5` | Follow-up after `0.7` dominated `0.9`; tests stronger suppression of noisy later actions |
 
-Evaluate both on the 200-task split and select one. Do not test other learning
-rates, beta values, epoch counts, or cost-ratio thresholds unless both runs are
-clearly broken.
+Evaluate all three on the 200-task split and select one. Do not test other
+learning rates, beta values, epoch counts, or cost-ratio thresholds unless all
+three runs are clearly broken.
 
 ## Stage 2: three DEPO trials
 
@@ -156,13 +158,13 @@ EPOCHS=3 \
   bash cloud/run.sh depo
 ```
 
-For screening, validate with the 200-task file and an 8K context:
+For screening, validate with the 200-task file and a 32K context:
 
 ```bash
 RUN_NAME=<unique-validation-run-name> \
 TASK_IDS_FILE=data/splits/swesmith_validation_200_instance_ids.txt \
 MODEL_PATH=<packaged-model-path> \
-CONTEXT_LENGTH=8192 \
+CONTEXT_LENGTH=32768 \
   bash cloud/run.sh validate
 ```
 
@@ -175,7 +177,7 @@ rollout count, and step limit unchanged.
 This reduced plan tests the most defensible choices while avoiding combinatorial
 search:
 
-- two values for DMPO's defining `gamma` parameter;
+- three values for DMPO's defining `gamma` parameter;
 - one DEPO paper setting;
 - one locally balanced generated-token setting;
 - one locally balanced total-cost setting;

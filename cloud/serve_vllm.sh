@@ -10,7 +10,11 @@ require_separate_storage
 
 GPU_ID="${GPU_ID:?Set GPU_ID to one physical GPU index.}"
 PORT="${PORT:?Set PORT to the vLLM port for this shard.}"
-VLLM_MODEL="${VLLM_MODEL:-${AGENTFORGE_MODEL:-Kwai-Klear/Klear-AgentForge-8B-SFT}}"
+VLLM_MODEL="${VLLM_MODEL:-${AGENTFORGE_MODEL:-$BASELINE_SFT_MODEL}}"
+VLLM_MODEL_REVISION="${VLLM_MODEL_REVISION:-}"
+if [[ -z "$VLLM_MODEL_REVISION" && "$VLLM_MODEL" == "$BASELINE_SFT_MODEL" ]]; then
+  VLLM_MODEL_REVISION="$BASELINE_SFT_MODEL_REVISION"
+fi
 SERVED_MODEL_NAME="${SERVED_MODEL_NAME:-$VLLM_MODEL}"
 if [[ "$SERVED_MODEL_NAME" == hosted_vllm/* ]]; then
   SERVED_MODEL_NAME="${SERVED_MODEL_NAME#hosted_vllm/}"
@@ -52,6 +56,10 @@ if [[ -n "${HF_TOKEN:-}" ]]; then
 fi
 
 read -r -a vllm_extra_args <<<"${VLLM_EXTRA_ARGS:-}"
+vllm_revision_args=()
+if [[ -n "$VLLM_MODEL_REVISION" ]]; then
+  vllm_revision_args+=(--revision "$VLLM_MODEL_REVISION")
+fi
 vllm_diagnostic_args=()
 if [[ "${VLLM_LOG_REQUESTS:-1}" == "1" ]]; then
   vllm_diagnostic_args+=(--enable-log-requests --max-log-len "${VLLM_MAX_LOG_LEN:-2048}")
@@ -62,6 +70,7 @@ apptainer exec --nv \
   --pwd "$DEBUG_DEPO_ROOT" \
   "$VLLM_IMAGE" \
   vllm serve "$VLLM_MODEL" \
+    "${vllm_revision_args[@]}" \
     --host 127.0.0.1 \
     --port "$PORT" \
     --served-model-name "$SERVED_MODEL_NAME" \

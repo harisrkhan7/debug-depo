@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
-from debug_depo.utils import requires_mistral_regex_fix, write_json
+from debug_depo.utils import requires_mistral_regex_fix, write_json, write_jsonl
 
 
 def dmpo_turn_weights(turns: int, gamma: float) -> list[float]:
@@ -354,6 +354,7 @@ def _disable_dropout(model: Any) -> None:
 class TrainConfig:
     objective: str
     model_name_or_path: str
+    model_revision: str | None
     data_path: str
     output_dir: str
     max_rows: int
@@ -404,6 +405,37 @@ def _latest_checkpoint(output_dir: Path) -> Path | None:
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     write_json(path, payload)
+
+
+def _prepare_training_metrics(path: Path, resume_step: int | None) -> None:
+    """Create a clean metrics log, retaining only committed resume steps."""
+
+    retained: list[dict[str, Any]] = []
+    if resume_step is not None and path.is_file():
+        with path.open(encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                try:
+                    metric = json.loads(line)
+                    step = int(metric["global_step"])
+                except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                    # A killed process can leave one incomplete final line. The
+                    # preceding complete records remain useful and recoverable.
+                    break
+                if step <= resume_step:
+                    retained.append(metric)
+    write_jsonl(path, retained)
+
+
+def _append_training_metric(path: Path, metric: dict[str, Any]) -> None:
+    """Durably append one loss observation to a JSONL training log."""
+
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(metric, sort_keys=True))
+        handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
 
 
 def _trial_config(config: TrainConfig) -> dict[str, Any]:
@@ -529,9 +561,11 @@ def train(config: TrainConfig) -> dict[str, Any]:
             "reused": True,
         }
     set_seed(config.seed)
+    revision_kwargs = {"revision": config.model_revision} if config.model_revision else {}
     model_config = AutoConfig.from_pretrained(
         config.model_name_or_path,
         trust_remote_code=config.trust_remote_code,
+        **revision_kwargs,
     )
     tokenizer = AutoTokenizer.from_pretrained(
         config.model_name_or_path,
@@ -540,6 +574,7 @@ def train(config: TrainConfig) -> dict[str, Any]:
         # affected Mistral tokenizers. Apply the rewrite only to Mistral-family
         # model configurations; Qwen's existing regex is intentional.
         fix_mistral_regex=requires_mistral_regex_fix(model_config),
+        **revision_kwargs,
     )
     if not getattr(tokenizer, "chat_template", None):
         raise ValueError("The selected tokenizer has no chat_template")
@@ -555,6 +590,7 @@ def train(config: TrainConfig) -> dict[str, Any]:
         "config": model_config,
         "trust_remote_code": config.trust_remote_code,
     }
+    model_kwargs.update(revision_kwargs)
     if config.attn_implementation:
         model_kwargs["attn_implementation"] = config.attn_implementation
     model = AutoModelForCausalLM.from_pretrained(config.model_name_or_path, **model_kwargs)
@@ -629,6 +665,14 @@ def train(config: TrainConfig) -> dict[str, Any]:
         batches_to_skip = int(state["batch_in_epoch"])
         global_step = int(state["global_step"])
         accelerator.print(f"Resumed from {checkpoint} at update {global_step}")
+
+    metrics_path = output_dir / "training_metrics.jsonl"
+    if accelerator.is_main_process:
+        _prepare_training_metrics(
+            metrics_path,
+            global_step if checkpoint is not None else None,
+        )
+    accelerator.wait_for_everyone()
 
     checkpoint_tokens = [uuid.uuid4().hex if accelerator.is_main_process else None]
     broadcast_object_list(checkpoint_tokens)
@@ -721,15 +765,28 @@ def train(config: TrainConfig) -> dict[str, Any]:
                 if accelerator.sync_gradients:
                     scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
-            running_loss += float(loss.detach())
+            mean_loss = accelerator.gather(loss.detach().float().reshape(1)).mean().item()
+            running_loss += mean_loss
             running_loss_batches += 1
             if accelerator.sync_gradients:
                 global_step += 1
                 if global_step % config.logging_steps == 0:
+                    logged_loss = running_loss / running_loss_batches
                     accelerator.print(
                         f"step={global_step}/{total_steps} "
-                        f"loss={running_loss / running_loss_batches:.6f}"
+                        f"loss={logged_loss:.6f}"
                     )
+                    if accelerator.is_main_process:
+                        _append_training_metric(
+                            metrics_path,
+                            {
+                                "epoch": epoch + 1,
+                                "global_step": global_step,
+                                "learning_rate": scheduler.get_last_lr()[0],
+                                "loss": logged_loss,
+                                "micro_batches": running_loss_batches,
+                            },
+                        )
                     running_loss = 0.0
                     running_loss_batches = 0
                 if config.save_steps and global_step % config.save_steps == 0:
@@ -737,6 +794,23 @@ def train(config: TrainConfig) -> dict[str, Any]:
         if global_step != last_checkpoint_step:
             save_checkpoint(epoch + 1, 0)
         batches_to_skip = 0
+
+    if running_loss_batches:
+        logged_loss = running_loss / running_loss_batches
+        accelerator.print(
+            f"step={global_step}/{total_steps} loss={logged_loss:.6f} (final)"
+        )
+        if accelerator.is_main_process:
+            _append_training_metric(
+                metrics_path,
+                {
+                    "epoch": config.epochs,
+                    "global_step": global_step,
+                    "learning_rate": scheduler.get_last_lr()[0],
+                    "loss": logged_loss,
+                    "micro_batches": running_loss_batches,
+                },
+            )
 
     accelerator.wait_for_everyone()
     adapter_dir = output_dir / "adapter"
@@ -753,12 +827,14 @@ def train(config: TrainConfig) -> dict[str, Any]:
             "schema_version": 1,
             "objective": config.objective,
             "base_and_reference_model": config.model_name_or_path,
+            "base_and_reference_model_revision": config.model_revision,
             "adapter_dir": str(adapter_dir),
             "data_path": str(Path(config.data_path).resolve()),
             "data_sha256": hashlib.sha256(Path(config.data_path).read_bytes()).hexdigest(),
             "data_summary": data_summary,
             "git_commit": _git_commit(),
             "global_steps": global_step,
+            "metrics_path": str(metrics_path),
             "config": asdict(config),
         }
         _write_json(output_dir / "training_manifest.json", manifest)
@@ -776,6 +852,7 @@ def build_parser(objective: str | None = None) -> argparse.ArgumentParser:
     if objective is None:
         parser.add_argument("--objective", choices=("dmpo", "depo"), required=True)
     parser.add_argument("--model-name-or-path", required=True)
+    parser.add_argument("--model-revision")
     parser.add_argument("--data-path", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--max-rows", type=int, default=0)
@@ -832,6 +909,7 @@ def main(argv: list[str] | None = None, *, objective: str | None = None) -> int:
     config = TrainConfig(
         objective=selected_objective,
         model_name_or_path=args.model_name_or_path,
+        model_revision=args.model_revision,
         data_path=args.data_path,
         output_dir=args.output_dir,
         max_rows=args.max_rows,

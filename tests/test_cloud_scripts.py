@@ -107,6 +107,33 @@ def test_cloud_common_preserves_explicit_hugging_face_token(tmp_path: Path) -> N
     assert completed.stdout.splitlines() == ["hf_explicit-token", "hf_explicit-token"]
 
 
+def test_baseline_prefetch_uses_pinned_model_revision(tmp_path: Path) -> None:
+    completed = run_script(
+        "cloud/prefetch_model.sh",
+        env={
+            "CLOUD_PERSISTENT_ROOT": str(tmp_path / "persistent"),
+            "CLOUD_EPHEMERAL_ROOT": str(tmp_path / "ephemeral"),
+            "DRY_RUN": "1",
+        },
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "revision:    0da97e45dbbd44278bd55b878170ec369d2934fb" in completed.stdout
+
+
+def test_custom_model_prefetch_does_not_inherit_baseline_revision(tmp_path: Path) -> None:
+    completed = run_script(
+        "cloud/prefetch_model.sh",
+        env={
+            "CLOUD_PERSISTENT_ROOT": str(tmp_path / "persistent"),
+            "CLOUD_EPHEMERAL_ROOT": str(tmp_path / "ephemeral"),
+            "DRY_RUN": "1",
+            "VLLM_MODEL": "example/custom-model",
+        },
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "revision:    <default branch>" in completed.stdout
+
+
 def test_swesmith_evaluation_timeout_defaults_to_600_and_allows_override(
     tmp_path: Path,
 ) -> None:
@@ -332,6 +359,41 @@ def test_cloud_transfers_pass_only_the_intended_trees_to_rsync(tmp_path: Path) -
     assert pulled_with_models.returncode == 0, pulled_with_models.stderr
     pull_arguments = arguments_file.read_text(encoding="utf-8").splitlines()
     assert not any("experiments" in argument for argument in pull_arguments)
+
+    pulled_with_adapters = run_script(
+        "cloud/run.sh",
+        "pull",
+        env={
+            **transfer_env,
+            "CLOUD_REMOTE": "ubuntu@example.test",
+            "CLOUD_REMOTE_PERSISTENT_ROOT": "/lambda/nfs/Debug-Depo/debug-depo-persistent",
+            "LOCAL_CLOUD_SCRATCH_DIR": str(destination),
+            "PULL_MODEL_ADAPTERS": "true",
+        },
+    )
+    assert pulled_with_adapters.returncode == 0, pulled_with_adapters.stderr
+    pull_arguments = arguments_file.read_text(encoding="utf-8").splitlines()
+    adapter_include = pull_arguments.index("**/experiments/**/adapter/***")
+    model_exclude = pull_arguments.index("**/experiments/**/*.safetensors")
+    assert pull_arguments[adapter_include - 1] == "--include"
+    assert adapter_include < model_exclude
+
+
+def test_cloud_pull_rejects_invalid_adapter_flag(tmp_path: Path) -> None:
+    fake_rsync, arguments_file = recording_rsync(tmp_path)
+    completed = run_script(
+        "cloud/run.sh",
+        "pull",
+        env={
+            "DRY_RUN": "1",
+            "RSYNC_ARGUMENTS_FILE": str(arguments_file),
+            "RSYNC_BIN": str(fake_rsync),
+            "LOCAL_CLOUD_SCRATCH_DIR": str(tmp_path / "destination"),
+            "PULL_MODEL_ADAPTERS": "sometimes",
+        },
+    )
+    assert completed.returncode == 2
+    assert "must be true or false" in completed.stderr
 
 
 def test_sif_sync_round_trip_copies_the_complete_tree(tmp_path: Path) -> None:

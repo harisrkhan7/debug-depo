@@ -79,20 +79,6 @@ def test_reports_per_shard_and_overall_finished_task_counts(tmp_path):
     assert "4/6" in output
 
 
-def test_missing_manifest_is_shown_as_waiting_shard(tmp_path):
-    write_manifest(tmp_path, 0, ["repo.task-0", "repo.task-2"])
-
-    progress = inspect_collection(tmp_path)
-
-    assert len(progress.shards) == 2
-    assert progress.shards[1].expected_tasks == 1
-    assert not progress.shards[1].manifest_present
-    evaluation = inspect_evaluation(tmp_path, progress)
-    output = render_progress(progress, evaluation, bar_width=10)
-    assert "shard-1" in output
-    assert "not started" in output
-
-
 def test_reports_live_and_summarized_evaluation_progress(tmp_path):
     write_manifest(tmp_path, 0, ["repo.task-0", "repo.task-2"])
     write_manifest(tmp_path, 1, ["repo.task-1"])

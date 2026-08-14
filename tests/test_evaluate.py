@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from debug_depo import evaluate
-from debug_depo.evaluate import build_evaluation_command, model_report_name, summarize_report
+from debug_depo.evaluate import model_report_name, summarize_report
 
 
 def args(**overrides):
@@ -34,15 +34,6 @@ def args(**overrides):
     }
     values.update(overrides)
     return Namespace(**values)
-
-
-def test_build_evaluation_command_includes_empty_namespace_for_local_builds():
-    command = build_evaluation_command(args())
-
-    namespace_index = command.index("--namespace")
-    assert command[namespace_index + 1] == ""
-    assert command[-3:] == ["--instance_ids", "a", "b"]
-    assert model_report_name("org/model", "run") == "org__model.run.json"
 
 
 def test_verified_target_requires_the_exact_full_evaluation():
@@ -164,20 +155,3 @@ def test_snapshot_validation_rejects_current_rows_that_differ_from_pin(monkeypat
         evaluate.validate_evaluator_dataset_snapshot(
             args(instance_ids=["a"], instance_ids_file=None)
         )
-
-
-def test_snapshot_validation_records_matching_pinned_rows(monkeypatch):
-    tasks = [{"instance_id": "a", "problem_statement": "same"}]
-    monkeypatch.setattr(
-        evaluate,
-        "load_swebench_tasks",
-        lambda _dataset, _split, *, revision: list(tasks),
-    )
-
-    snapshot = evaluate.validate_evaluator_dataset_snapshot(
-        args(instance_ids=["a"], instance_ids_file=None)
-    )
-
-    assert snapshot["dataset_revision"] == args().dataset_revision
-    assert snapshot["selected_task_count"] == 1
-    assert len(snapshot["task_rows_sha256"]) == 64

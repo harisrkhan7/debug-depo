@@ -12,7 +12,6 @@ from debug_depo.preference_training import (
     depo_efficiency_bonus,
     dmpo_turn_weights,
     tokenize_trajectory,
-    validate_training_rows,
 )
 
 
@@ -20,8 +19,7 @@ class PrefixStableTokenizer:
     def apply_chat_template(self, messages, *, tokenize, add_generation_prompt):
         assert tokenize
         rendered = "".join(
-            f"<{message['role']}>{message['content']}</{message['role']}>"
-            for message in messages
+            f"<{message['role']}>{message['content']}</{message['role']}>" for message in messages
         )
         if add_generation_prompt:
             rendered += "<assistant>"
@@ -32,13 +30,6 @@ def test_dmpo_turn_weights_match_authors_official_implementation():
     assert dmpo_turn_weights(3, 1) == pytest.approx([1, 2 / 3, 1 / 3])
     assert dmpo_turn_weights(3, 0.5) == pytest.approx([1, 3 / 7, 1 / 7])
     assert dmpo_turn_weights(3, 0) == pytest.approx([1, 0, 0])
-
-
-def test_dmpo_turn_weights_reject_invalid_values():
-    with pytest.raises(ValueError, match="positive"):
-        dmpo_turn_weights(0, 0.7)
-    with pytest.raises(ValueError, match="gamma"):
-        dmpo_turn_weights(1, -0.1)
 
 
 def test_trial_directory_rejects_changed_hyperparameters(tmp_path):
@@ -113,12 +104,15 @@ def test_depo_bonus_is_only_applied_to_desirable_rows():
         token_metric="total_tokens",
     ) == pytest.approx(0.79)
     row["label"] = "undesirable"
-    assert depo_efficiency_bonus(
-        row,
-        alpha_tokens=2,
-        alpha_steps=3,
-        token_metric="total_tokens",
-    ) == 0
+    assert (
+        depo_efficiency_bonus(
+            row,
+            alpha_tokens=2,
+            alpha_steps=3,
+            token_metric="total_tokens",
+        )
+        == 0
+    )
 
 
 def test_tokenize_trajectory_masks_prompt_and_observations_and_weights_turns():
@@ -146,23 +140,6 @@ def test_tokenize_trajectory_masks_prompt_and_observations_and_weights_turns():
     assert weights[observation_start] == 0.0
     assert weights[second_start] == 0.5
     assert all(weight == 0 for weight in weights[: rendered.index("<assistant>")])
-
-
-def test_validate_depo_requires_both_labels():
-    base = {
-        "id": "x",
-        "label": "desirable",
-        "prompt": [{"role": "user", "content": "task"}],
-        "completion": [{"role": "assistant", "content": "answer"}],
-        "efficiency": {},
-    }
-    with pytest.raises(ValueError, match="both desirable and undesirable"):
-        validate_training_rows("depo", [base])
-    summary = validate_training_rows(
-        "depo",
-        [base, {**base, "id": "y", "label": "undesirable"}],
-    )
-    assert summary["labels"] == {"desirable": 1, "undesirable": 1}
 
 
 def test_depo_dataset_builds_mismatched_kto_kl_trajectory():

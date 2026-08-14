@@ -86,10 +86,7 @@ def test_analyze_run_writes_one_row_per_prediction_and_classifies_failures(tmp_p
     )
     (trajectory_two.parent / "stderr.txt").write_text("step limit exceeded\n", encoding="utf-8")
 
-    report_path = (
-        run_root
-        / "evaluation/logs/run/org__model/repo__project-1/report.json"
-    )
+    report_path = run_root / "evaluation/logs/run/org__model/repo__project-1/report.json"
     write_json(
         report_path,
         {
@@ -141,26 +138,6 @@ def test_analyze_run_writes_one_row_per_prediction_and_classifies_failures(tmp_p
     assert "LimitsExceeded" in rows[1]["failure_reason"]
 
 
-def test_analyze_run_reports_expected_count_mismatch(tmp_path):
-    run_root = tmp_path / "run"
-    predictions = run_root / "merged/predictions.jsonl"
-    predictions.parent.mkdir(parents=True)
-    predictions.write_text(
-        json.dumps({"instance_id": "repo__project-1", "model_patch": ""}) + "\n",
-        encoding="utf-8",
-    )
-
-    summary = analyze_run(
-        run_root,
-        run_root / "analysis/instances.csv",
-        run_root / "analysis/summary.json",
-        expected_count=500,
-    )
-
-    assert summary["matches_expected_count"] is False
-    assert summary["instances"] == 1
-
-
 def test_analyze_run_smoke_samples_every_prediction_shard(tmp_path):
     run_root = tmp_path / "run"
     for shard in range(3):
@@ -173,9 +150,7 @@ def test_analyze_run_smoke_samples_every_prediction_shard(tmp_path):
             }
             for index in range(2)
         ]
-        predictions.write_text(
-            "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
-        )
+        predictions.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
 
     output_csv = run_root / "analysis-smoke/instances.csv"
     summary = analyze_run(

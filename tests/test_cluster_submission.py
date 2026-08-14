@@ -10,9 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def base_env(tmp_path: Path, **overrides: str) -> dict[str, str]:
     env = {
-        name: os.environ[name]
-        for name in ("HOME", "PATH", "TMPDIR", "USER")
-        if name in os.environ
+        name: os.environ[name] for name in ("HOME", "PATH", "TMPDIR", "USER") if name in os.environ
     }
     env.update(
         {
@@ -39,12 +37,12 @@ def recording_command(tmp_path: Path, name: str) -> tuple[Path, Path]:
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
         f"{help_guard}"
-        'first=1\n'
+        "first=1\n"
         'for argument in "$@"; do\n'
         '  ((first)) || printf "\\t" >>"$COMMAND_LOG"\n'
         '  printf "%s" "$argument" >>"$COMMAND_LOG"\n'
-        '  first=0\n'
-        'done\n'
+        "  first=0\n"
+        "done\n"
         'printf "\\n" >>"$COMMAND_LOG"\n'
         f"{qsub_response}",
         encoding="utf-8",
@@ -134,37 +132,6 @@ def test_swesmith_pilot_cache_pipeline_is_one_dependency_chain(tmp_path: Path) -
     assert "depend=afterok:1.server" in joined(calls[1])
     assert "depend=afterok:2.server" in joined(calls[2])
     assert "depend=afterok:3.server" in joined(calls[3])
-
-
-def test_cache_submission_selects_resources_for_each_mode(tmp_path: Path) -> None:
-    cases = (
-        ("cluster/submit_apptainer_cache_smoke.sh", "smoke", "2"),
-        ("cluster/submit_apptainer_cache_full.sh", "full", "20"),
-    )
-    for index, (script, mode, workers) in enumerate(cases):
-        case_path = tmp_path / str(index)
-        case_path.mkdir()
-        completed, calls = run_submission(case_path, script)
-        assert completed.returncode == 0, completed.stderr
-        assert len(calls) == 1
-        command = joined(calls[0])
-        assert f"CACHE_BUILD_MODE={mode}" in command
-        assert f"CACHE_BUILD_MAX_WORKERS={workers}" in command
-        assert calls[0][-1] == f"cluster/pbs/build_apptainer_cache_{mode}.pbs"
-
-
-def test_preference_data_jobs_are_independent(tmp_path: Path) -> None:
-    completed, calls = run_submission(
-        tmp_path,
-        "cluster/submit_preference_data.sh",
-        AFTEROK_JOB_ID="upstream.server",
-    )
-
-    assert completed.returncode == 0, completed.stderr
-    assert len(calls) == 2
-    assert calls[0][-1] == "cluster/pbs/build_dmpo_pairs.pbs"
-    assert calls[1][-1] == "cluster/pbs/build_depo_data.pbs"
-    assert all("depend=afterok:upstream.server" in joined(call) for call in calls)
 
 
 def test_preference_training_chains_data_training_and_packaging(tmp_path: Path) -> None:

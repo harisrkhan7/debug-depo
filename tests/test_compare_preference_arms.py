@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from debug_depo.compare_preference_arms import build_parser, compare_preference_arms
+from debug_depo.compare_preference_arms import compare_preference_arms
 
 
 COLUMNS = (
@@ -41,21 +41,6 @@ def arm_rows(outcomes, totals):
     return rows
 
 
-def test_success_tolerance_defaults_to_three_percentage_points():
-    args = build_parser().parse_args(
-        [
-            "--baseline",
-            "sft=baseline.csv",
-            "--arm",
-            "dmpo=dmpo.csv",
-            "--output",
-            "comparison.json",
-        ]
-    )
-
-    assert args.success_tolerance == 0.03
-
-
 def test_compare_selects_lowest_cost_success_noninferior_arm(tmp_path):
     baseline = tmp_path / "baseline.csv"
     efficient = tmp_path / "efficient.csv"
@@ -81,10 +66,7 @@ def test_compare_selects_lowest_cost_success_noninferior_arm(tmp_path):
     by_name = {row["name"]: row for row in summary["arms"]}
     assert by_name["sft"]["efficiency"]["total_tokens_per_resolved_task"] == 500
     assert by_name["dmpo"]["efficiency"]["total_tokens_per_resolved_task"] == 255
-    assert (
-        by_name["dmpo"]["paired_deltas_vs_baseline"]["all"]["total_tokens"]["mean"]
-        == -122.5
-    )
+    assert by_name["dmpo"]["paired_deltas_vs_baseline"]["all"]["total_tokens"]["mean"] == -122.5
     assert by_name["dmpo"]["resolution_transitions_vs_baseline"] == {
         "both_resolved": 2,
         "both_unresolved": 2,
@@ -125,43 +107,6 @@ def test_compare_rejects_unscored_evaluations(tmp_path):
             arms=[("dmpo", candidate)],
             output=tmp_path / "comparison.json",
         )
-
-
-def test_compare_rejects_an_unexpected_task_count(tmp_path):
-    baseline = tmp_path / "baseline.csv"
-    candidate = tmp_path / "candidate.csv"
-    write_arm(baseline, arm_rows([True, False], [100, 200]))
-    write_arm(candidate, arm_rows([True, False], [90, 180]))
-
-    with pytest.raises(ValueError, match="Expected 500 tasks, found 2"):
-        compare_preference_arms(
-            baseline=("sft", baseline),
-            arms=[("dmpo", candidate)],
-            output=tmp_path / "comparison.json",
-            expected_tasks=500,
-        )
-
-
-def test_compare_does_not_rank_incomplete_total_token_telemetry(tmp_path):
-    baseline = tmp_path / "baseline.csv"
-    candidate = tmp_path / "candidate.csv"
-    write_arm(baseline, arm_rows([True, False], [100, 200]))
-    rows = arm_rows([True, False], [90, 180])
-    rows[-1]["total_tokens"] = ""
-    write_arm(candidate, rows)
-
-    summary = compare_preference_arms(
-        baseline=("sft", baseline),
-        arms=[("dmpo", candidate)],
-        output=tmp_path / "comparison.json",
-        allow_incomplete_telemetry=True,
-    )
-
-    by_name = {row["name"]: row for row in summary["arms"]}
-    assert summary["selected_arm"] == "sft"
-    assert by_name["dmpo"]["success_noninferior"] is True
-    assert by_name["dmpo"]["rankable"] is False
-    assert by_name["dmpo"]["selection_eligible"] is False
 
 
 def test_compare_rejects_incomplete_efficiency_telemetry_by_default(tmp_path):

@@ -27,10 +27,7 @@ def dmpo_turn_weights(turns: int, gamma: float) -> list[float]:
     if gamma == 1:
         return [(turns - turn) / turns for turn in range(turns)]
     denominator = 1 - gamma**turns
-    return [
-        gamma**turn * (1 - gamma ** (turns - turn)) / denominator
-        for turn in range(turns)
-    ]
+    return [gamma**turn * (1 - gamma ** (turns - turn)) / denominator for turn in range(turns)]
 
 
 def depo_efficiency_bonus(
@@ -93,11 +90,7 @@ def validate_training_rows(objective: str, rows: Sequence[dict[str, Any]]) -> di
         prompt = row["prompt"]
         if not isinstance(prompt, list) or not prompt:
             raise ValueError(f"Row {index} has an invalid prompt")
-        branches = (
-            (row["chosen"], row["rejected"])
-            if objective == "dmpo"
-            else (row["completion"],)
-        )
+        branches = (row["chosen"], row["rejected"]) if objective == "dmpo" else (row["completion"],)
         for branch in branches:
             if not isinstance(branch, list) or not branch:
                 raise ValueError(f"Row {index} has an empty trajectory")
@@ -171,9 +164,7 @@ def tokenize_trajectory(
             weights[token_index] = float(coefficient)
 
     if not any(weight > 0 for weight in weights):
-        raise ValueError(
-            "No assistant tokens remain after tokenization; increase --max-length"
-        )
+        raise ValueError("No assistant tokens remain after tokenization; increase --max-length")
     return {
         "input_ids": full_ids,
         "attention_mask": [1] * len(full_ids),
@@ -389,6 +380,106 @@ class TrainConfig:
     attn_implementation: str | None
 
 
+def _load_model_and_tokenizer(config: TrainConfig) -> tuple[Any, Any]:
+    import torch
+    from peft import LoraConfig, get_peft_model
+    from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+
+    pretrained_kwargs: dict[str, Any] = {"trust_remote_code": config.trust_remote_code}
+    if config.model_revision:
+        pretrained_kwargs["revision"] = config.model_revision
+
+    model_config = AutoConfig.from_pretrained(config.model_name_or_path, **pretrained_kwargs)
+    tokenizer = AutoTokenizer.from_pretrained(
+        config.model_name_or_path,
+        # Transformers 4.57.x can misidentify locally packaged Qwen models as
+        # affected Mistral tokenizers. Apply the rewrite only to Mistral-family
+        # model configurations; Qwen's existing regex is intentional.
+        fix_mistral_regex=requires_mistral_regex_fix(model_config),
+        **pretrained_kwargs,
+    )
+    if not getattr(tokenizer, "chat_template", None):
+        raise ValueError("The selected tokenizer has no chat_template")
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    dtype = {
+        "bf16": torch.bfloat16,
+        "fp16": torch.float16,
+    }.get(config.mixed_precision, torch.float32)
+    model_kwargs: dict[str, Any] = {
+        **pretrained_kwargs,
+        "dtype": dtype,
+        "config": model_config,
+    }
+    if config.attn_implementation:
+        model_kwargs["attn_implementation"] = config.attn_implementation
+    model = AutoModelForCausalLM.from_pretrained(config.model_name_or_path, **model_kwargs)
+    model.config.use_cache = False
+    _disable_dropout(model)
+    if config.gradient_checkpointing:
+        model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+        model.enable_input_require_grads()
+
+    target_modules = [
+        value.strip() for value in config.lora_target_modules.split(",") if value.strip()
+    ]
+    model = get_peft_model(
+        model,
+        LoraConfig(
+            r=config.lora_r,
+            lora_alpha=config.lora_alpha,
+            lora_dropout=config.lora_dropout,
+            target_modules=target_modules,
+            task_type="CAUSAL_LM",
+            bias="none",
+        ),
+    )
+    return model, tokenizer
+
+
+def _dmpo_loss(model: Any, batch: dict[str, Any], config: TrainConfig, accelerator: Any) -> Any:
+    import torch
+    import torch.nn.functional as functional
+
+    combined = {
+        key: torch.cat((batch["chosen"][key], batch["rejected"][key]), dim=0)
+        for key in ("input_ids", "attention_mask", "token_weights")
+    }
+    policy_logps = _sequence_logps(model, combined)
+    reference_context = accelerator.unwrap_model(model).disable_adapter()
+    with torch.no_grad(), reference_context:
+        reference_logps = _sequence_logps(model, combined)
+    midpoint = policy_logps.shape[0] // 2
+    policy_margin = policy_logps[:midpoint] - policy_logps[midpoint:]
+    reference_margin = reference_logps[:midpoint] - reference_logps[midpoint:]
+    return -functional.logsigmoid(config.beta * (policy_margin - reference_margin)).mean()
+
+
+def _depo_loss(model: Any, batch: dict[str, Any], config: TrainConfig, accelerator: Any) -> Any:
+    import torch
+
+    policy_logps = _sequence_logps(model, batch)
+    with torch.no_grad():
+        policy_kl_logps = _sequence_logps(model, batch["kl"])
+    reference_context = accelerator.unwrap_model(model).disable_adapter()
+    with torch.no_grad(), reference_context:
+        reference_logps = _sequence_logps(model, batch)
+        reference_kl_logps = _sequence_logps(model, batch["kl"])
+    logratios = policy_logps - reference_logps
+    kl_logratios = policy_kl_logps - reference_kl_logps
+    kl = accelerator.gather(kl_logratios).mean().clamp(min=0)
+    bonus = batch["efficiency_bonus"].to(logratios.dtype)
+    desirable_values = 1 - torch.sigmoid(config.beta * (logratios - kl + bonus))
+    undesirable_values = 1 - torch.sigmoid(config.beta * (kl - logratios))
+    losses = torch.where(
+        batch["desirable"],
+        config.desirable_weight * desirable_values,
+        config.undesirable_weight * undesirable_values,
+    )
+    return losses.mean()
+
+
 def _latest_checkpoint(output_dir: Path) -> Path | None:
     checkpoints = []
     for path in output_dir.glob("checkpoint-*"):
@@ -403,8 +494,20 @@ def _latest_checkpoint(output_dir: Path) -> Path | None:
     return max(checkpoints, default=(0, None))[1]
 
 
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    write_json(path, payload)
+def _resume_training(
+    accelerator: Any, output_dir: Path, enabled: bool
+) -> tuple[Path | None, int, int, int]:
+    checkpoint = _latest_checkpoint(output_dir) if enabled else None
+    if checkpoint is None:
+        return None, 0, 0, 0
+
+    accelerator.load_state(checkpoint)
+    state = json.loads((checkpoint / "trainer_state.json").read_text())
+    start_epoch = int(state["epoch"])
+    batches_to_skip = int(state["batch_in_epoch"])
+    global_step = int(state["global_step"])
+    accelerator.print(f"Resumed from {checkpoint} at update {global_step}")
+    return checkpoint, start_epoch, batches_to_skip, global_step
 
 
 def _prepare_training_metrics(path: Path, resume_step: int | None) -> None:
@@ -456,9 +559,7 @@ def _trial_config(config: TrainConfig) -> dict[str, Any]:
             else None
         ),
         "depo_trial_name": (
-            os.getenv("DEPO_TRIAL_NAME", "default")
-            if config.objective == "depo"
-            else None
+            os.getenv("DEPO_TRIAL_NAME", "default") if config.objective == "depo" else None
         ),
         "data_sha256": hashlib.sha256(Path(config.data_path).read_bytes()).hexdigest(),
         "config": values,
@@ -488,7 +589,7 @@ def _ensure_compatible_trial_config(output_dir: Path, payload: dict[str, Any]) -
             f"Trial directory is non-empty but has no trial_config.json: {output_dir}. "
             "Choose a new trial name or migrate the existing run."
         )
-    _write_json(path, payload)
+    write_json(path, payload)
 
 
 def _git_commit() -> str | None:
@@ -507,14 +608,15 @@ def train(config: TrainConfig) -> dict[str, Any]:
     """Run distributed LoRA preference training through Accelerate."""
 
     import torch
-    import torch.nn.functional as functional
     from accelerate import Accelerator
     from accelerate.utils import broadcast_object_list, set_seed
-    from peft import LoraConfig, get_peft_model
     from torch.utils.data import DataLoader
-    from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, get_scheduler
+    from transformers import get_scheduler
 
     output_dir = Path(config.output_dir).expanduser().resolve()
+    adapter_dir = output_dir / "adapter"
+    manifest_path = output_dir / "training_manifest.json"
+    metrics_path = output_dir / "training_metrics.jsonl"
     output_dir.mkdir(parents=True, exist_ok=True)
     rows = _read_jsonl(config.data_path)
     if config.max_rows:
@@ -544,77 +646,19 @@ def train(config: TrainConfig) -> dict[str, Any]:
     if config_errors[0]:
         raise ValueError(config_errors[0])
     accelerator.wait_for_everyone()
-    complete = (
-        (output_dir / "training_manifest.json").is_file()
-        and (output_dir / "adapter" / "adapter_config.json").is_file()
-    )
+    complete = manifest_path.is_file() and (adapter_dir / "adapter_config.json").is_file()
     completion_states = [complete if accelerator.is_main_process else None]
     broadcast_object_list(completion_states)
     if completion_states[0]:
         accelerator.print(f"Reusing complete {config.objective.upper()} training: {output_dir}")
         return {
             "objective": config.objective,
-            "adapter_dir": str(output_dir / "adapter"),
-            "global_steps": json.loads(
-                (output_dir / "training_manifest.json").read_text(encoding="utf-8")
-            )["global_steps"],
+            "adapter_dir": str(adapter_dir),
+            "global_steps": json.loads(manifest_path.read_text(encoding="utf-8"))["global_steps"],
             "reused": True,
         }
     set_seed(config.seed)
-    revision_kwargs = {"revision": config.model_revision} if config.model_revision else {}
-    model_config = AutoConfig.from_pretrained(
-        config.model_name_or_path,
-        trust_remote_code=config.trust_remote_code,
-        **revision_kwargs,
-    )
-    tokenizer = AutoTokenizer.from_pretrained(
-        config.model_name_or_path,
-        trust_remote_code=config.trust_remote_code,
-        # Transformers 4.57.x can misidentify locally packaged Qwen models as
-        # affected Mistral tokenizers. Apply the rewrite only to Mistral-family
-        # model configurations; Qwen's existing regex is intentional.
-        fix_mistral_regex=requires_mistral_regex_fix(model_config),
-        **revision_kwargs,
-    )
-    if not getattr(tokenizer, "chat_template", None):
-        raise ValueError("The selected tokenizer has no chat_template")
-    if tokenizer.pad_token_id is None:
-        tokenizer.pad_token = tokenizer.eos_token
-
-    model_kwargs: dict[str, Any] = {
-        "dtype": (
-            torch.bfloat16
-            if config.mixed_precision == "bf16"
-            else torch.float16 if config.mixed_precision == "fp16" else torch.float32
-        ),
-        "config": model_config,
-        "trust_remote_code": config.trust_remote_code,
-    }
-    model_kwargs.update(revision_kwargs)
-    if config.attn_implementation:
-        model_kwargs["attn_implementation"] = config.attn_implementation
-    model = AutoModelForCausalLM.from_pretrained(config.model_name_or_path, **model_kwargs)
-    model.config.use_cache = False
-    _disable_dropout(model)
-    if config.gradient_checkpointing:
-        model.gradient_checkpointing_enable(
-            gradient_checkpointing_kwargs={"use_reentrant": False}
-        )
-        model.enable_input_require_grads()
-    target_modules = [
-        value.strip() for value in config.lora_target_modules.split(",") if value.strip()
-    ]
-    model = get_peft_model(
-        model,
-        LoraConfig(
-            r=config.lora_r,
-            lora_alpha=config.lora_alpha,
-            lora_dropout=config.lora_dropout,
-            target_modules=target_modules,
-            task_type="CAUSAL_LM",
-            bias="none",
-        ),
-    )
+    model, tokenizer = _load_model_and_tokenizer(config)
     if accelerator.is_main_process:
         model.print_trainable_parameters()
 
@@ -654,19 +698,12 @@ def train(config: TrainConfig) -> dict[str, Any]:
     )
     accelerator.register_for_checkpointing(scheduler)
 
-    start_epoch = 0
-    batches_to_skip = 0
-    global_step = 0
-    checkpoint = _latest_checkpoint(output_dir) if config.resume else None
-    if checkpoint is not None:
-        accelerator.load_state(checkpoint)
-        state = json.loads((checkpoint / "trainer_state.json").read_text())
-        start_epoch = int(state["epoch"])
-        batches_to_skip = int(state["batch_in_epoch"])
-        global_step = int(state["global_step"])
-        accelerator.print(f"Resumed from {checkpoint} at update {global_step}")
+    checkpoint, start_epoch, batches_to_skip, global_step = _resume_training(
+        accelerator,
+        output_dir,
+        config.resume,
+    )
 
-    metrics_path = output_dir / "training_metrics.jsonl"
     if accelerator.is_main_process:
         _prepare_training_metrics(
             metrics_path,
@@ -689,7 +726,7 @@ def train(config: TrainConfig) -> dict[str, Any]:
         accelerator.save_state(temporary_dir)
         accelerator.wait_for_everyone()
         if accelerator.is_main_process:
-            _write_json(
+            write_json(
                 temporary_dir / "trainer_state.json",
                 {
                     "epoch": epoch,
@@ -700,6 +737,21 @@ def train(config: TrainConfig) -> dict[str, Any]:
             os.replace(temporary_dir, checkpoint_dir)
         accelerator.wait_for_everyone()
         last_checkpoint_step = global_step
+
+    def log_training_metric(epoch: int, suffix: str = "") -> None:
+        logged_loss = running_loss / running_loss_batches
+        accelerator.print(f"step={global_step}/{total_steps} loss={logged_loss:.6f}{suffix}")
+        if accelerator.is_main_process:
+            _append_training_metric(
+                metrics_path,
+                {
+                    "epoch": epoch,
+                    "global_step": global_step,
+                    "learning_rate": scheduler.get_last_lr()[0],
+                    "loss": logged_loss,
+                    "micro_batches": running_loss_batches,
+                },
+            )
 
     model.train()
     running_loss = 0.0
@@ -715,49 +767,11 @@ def train(config: TrainConfig) -> dict[str, Any]:
         for batch in epoch_loader:
             processed_batches += 1
             with accelerator.accumulate(model):
-                if config.objective == "dmpo":
-                    combined = {
-                        key: torch.cat((batch["chosen"][key], batch["rejected"][key]), dim=0)
-                        for key in ("input_ids", "attention_mask", "token_weights")
-                    }
-                    policy_logps = _sequence_logps(model, combined)
-                    reference_context = accelerator.unwrap_model(model).disable_adapter()
-                    with torch.no_grad(), reference_context:
-                        reference_logps = _sequence_logps(model, combined)
-                    midpoint = policy_logps.shape[0] // 2
-                    policy_margin = policy_logps[:midpoint] - policy_logps[midpoint:]
-                    reference_margin = (
-                        reference_logps[:midpoint] - reference_logps[midpoint:]
-                    )
-                    loss = -functional.logsigmoid(
-                        config.beta * (policy_margin - reference_margin)
-                    ).mean()
-                else:
-                    policy_logps = _sequence_logps(model, batch)
-                    with torch.no_grad():
-                        policy_kl_logps = _sequence_logps(model, batch["kl"])
-                    reference_context = accelerator.unwrap_model(model).disable_adapter()
-                    with torch.no_grad(), reference_context:
-                        reference_logps = _sequence_logps(model, batch)
-                        reference_kl_logps = _sequence_logps(model, batch["kl"])
-                    logratios = policy_logps - reference_logps
-                    kl_logratios = policy_kl_logps - reference_kl_logps
-                    gathered_kl = accelerator.gather(kl_logratios)
-                    kl = gathered_kl.mean().clamp(min=0)
-                    desirable = batch["desirable"]
-                    bonus = batch["efficiency_bonus"].to(logratios.dtype)
-                    desirable_values = 1 - torch.sigmoid(
-                        config.beta * (logratios - kl + bonus)
-                    )
-                    undesirable_values = 1 - torch.sigmoid(
-                        config.beta * (kl - logratios)
-                    )
-                    losses = torch.where(
-                        desirable,
-                        config.desirable_weight * desirable_values,
-                        config.undesirable_weight * undesirable_values,
-                    )
-                    loss = losses.mean()
+                loss = (
+                    _dmpo_loss(model, batch, config, accelerator)
+                    if config.objective == "dmpo"
+                    else _depo_loss(model, batch, config, accelerator)
+                )
                 accelerator.backward(loss)
                 if accelerator.sync_gradients:
                     accelerator.clip_grad_norm_(trainable, 1.0)
@@ -771,22 +785,7 @@ def train(config: TrainConfig) -> dict[str, Any]:
             if accelerator.sync_gradients:
                 global_step += 1
                 if global_step % config.logging_steps == 0:
-                    logged_loss = running_loss / running_loss_batches
-                    accelerator.print(
-                        f"step={global_step}/{total_steps} "
-                        f"loss={logged_loss:.6f}"
-                    )
-                    if accelerator.is_main_process:
-                        _append_training_metric(
-                            metrics_path,
-                            {
-                                "epoch": epoch + 1,
-                                "global_step": global_step,
-                                "learning_rate": scheduler.get_last_lr()[0],
-                                "loss": logged_loss,
-                                "micro_batches": running_loss_batches,
-                            },
-                        )
+                    log_training_metric(epoch + 1)
                     running_loss = 0.0
                     running_loss_batches = 0
                 if config.save_steps and global_step % config.save_steps == 0:
@@ -796,24 +795,9 @@ def train(config: TrainConfig) -> dict[str, Any]:
         batches_to_skip = 0
 
     if running_loss_batches:
-        logged_loss = running_loss / running_loss_batches
-        accelerator.print(
-            f"step={global_step}/{total_steps} loss={logged_loss:.6f} (final)"
-        )
-        if accelerator.is_main_process:
-            _append_training_metric(
-                metrics_path,
-                {
-                    "epoch": config.epochs,
-                    "global_step": global_step,
-                    "learning_rate": scheduler.get_last_lr()[0],
-                    "loss": logged_loss,
-                    "micro_batches": running_loss_batches,
-                },
-            )
+        log_training_metric(config.epochs, " (final)")
 
     accelerator.wait_for_everyone()
-    adapter_dir = output_dir / "adapter"
     unwrapped = accelerator.unwrap_model(model)
     if accelerator.is_main_process:
         unwrapped.save_pretrained(
@@ -837,7 +821,7 @@ def train(config: TrainConfig) -> dict[str, Any]:
             "metrics_path": str(metrics_path),
             "config": asdict(config),
         }
-        _write_json(output_dir / "training_manifest.json", manifest)
+        write_json(manifest_path, manifest)
     accelerator.wait_for_everyone()
     return {
         "objective": config.objective,

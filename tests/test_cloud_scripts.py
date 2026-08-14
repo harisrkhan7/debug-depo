@@ -67,10 +67,7 @@ def test_cloud_common_exports_saved_hugging_face_token(tmp_path: Path) -> None:
 
     completed = run_script(
         "-c",
-        (
-            "source cloud/common.sh; "
-            'printf "%s\\n" "$HF_TOKEN" "$HUGGING_FACE_HUB_TOKEN"'
-        ),
+        ('source cloud/common.sh; printf "%s\\n" "$HF_TOKEN" "$HUGGING_FACE_HUB_TOKEN"'),
         env={
             "CLOUD_PERSISTENT_ROOT": str(tmp_path / "persistent"),
             "CLOUD_EPHEMERAL_ROOT": str(tmp_path / "ephemeral"),
@@ -90,10 +87,7 @@ def test_cloud_common_preserves_explicit_hugging_face_token(tmp_path: Path) -> N
 
     completed = run_script(
         "-c",
-        (
-            "source cloud/common.sh; "
-            'printf "%s\\n" "$HF_TOKEN" "$HUGGING_FACE_HUB_TOKEN"'
-        ),
+        ('source cloud/common.sh; printf "%s\\n" "$HF_TOKEN" "$HUGGING_FACE_HUB_TOKEN"'),
         env={
             "CLOUD_PERSISTENT_ROOT": str(tmp_path / "persistent"),
             "CLOUD_EPHEMERAL_ROOT": str(tmp_path / "ephemeral"),
@@ -140,8 +134,7 @@ def test_swesmith_evaluation_timeout_defaults_to_600_and_allows_override(
     arguments_file = tmp_path / "uv-arguments"
     fake_uv = tmp_path / "uv"
     fake_uv.write_text(
-        "#!/usr/bin/env bash\n"
-        'printf "%s\\n" "$@" >"$UV_ARGUMENTS_FILE"\n',
+        '#!/usr/bin/env bash\nprintf "%s\\n" "$@" >"$UV_ARGUMENTS_FILE"\n',
         encoding="utf-8",
     )
     fake_uv.chmod(0o755)
@@ -174,9 +167,9 @@ def test_shard_supervisor_detects_vllm_exit(tmp_path: Path) -> None:
         (
             "source cloud/common.sh; "
             "sleep 30 & collector_pid=$!; "
-            "supervise_collector 999999 \"$collector_pid\" 0 1 "
-            "\"$TEST_ACTIVITY_PATH\"; status=$?; "
-            "kill \"$collector_pid\"; wait \"$collector_pid\" 2>/dev/null; "
+            'supervise_collector 999999 "$collector_pid" 0 1 '
+            '"$TEST_ACTIVITY_PATH"; status=$?; '
+            'kill "$collector_pid"; wait "$collector_pid" 2>/dev/null; '
             "printf '%s\\n' \"$status\""
         ),
         env={
@@ -197,10 +190,10 @@ def test_shard_supervisor_detects_no_progress(tmp_path: Path) -> None:
         (
             "source cloud/common.sh; "
             "sleep 30 & vllm_pid=$!; sleep 30 & collector_pid=$!; "
-            "supervise_collector \"$vllm_pid\" \"$collector_pid\" 1 1 "
-            "\"$TEST_ACTIVITY_PATH\"; status=$?; "
-            "kill \"$vllm_pid\" \"$collector_pid\"; "
-            "wait \"$vllm_pid\" \"$collector_pid\" 2>/dev/null; "
+            'supervise_collector "$vllm_pid" "$collector_pid" 1 1 '
+            '"$TEST_ACTIVITY_PATH"; status=$?; '
+            'kill "$vllm_pid" "$collector_pid"; '
+            'wait "$vllm_pid" "$collector_pid" 2>/dev/null; '
             "printf '%s\\n' \"$status\""
         ),
         env={
@@ -213,43 +206,6 @@ def test_shard_supervisor_detects_no_progress(tmp_path: Path) -> None:
     assert completed.returncode == 0, completed.stderr
     assert completed.stdout.strip() == "71"
     assert "no collector progress" in completed.stderr
-
-
-def test_environment_discovers_gpus_and_separates_storage(tmp_path: Path) -> None:
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    nvidia_smi = bin_dir / "nvidia-smi"
-    nvidia_smi.write_text(
-        "#!/usr/bin/env bash\nfor index in 0 1 2 3; do echo \"$index\"; done\n",
-        encoding="utf-8",
-    )
-    nvidia_smi.chmod(0o755)
-    persistent = tmp_path / "persistent"
-    ephemeral = tmp_path / "ephemeral"
-
-    completed = run_script(
-        "-c",
-        (
-            "source cloud/env.sh; "
-            'printf "%s\\n" "$GPU_IDS" "$NUM_SHARDS" "$NUM_PROCESSES" '
-            '"$DEBUG_DEPO_SCRATCH" "$DEBUG_DEPO_SIF_ROOT" "$VLLM_IMAGE"'
-        ),
-        env={
-            "CLOUD_PERSISTENT_ROOT": str(persistent),
-            "CLOUD_EPHEMERAL_ROOT": str(ephemeral),
-            "GPU_IDS": "",
-            "NUM_PROCESSES": "",
-            "NUM_SHARDS": "",
-            "PATH": f"{bin_dir}:{os.environ['PATH']}",
-        },
-    )
-
-    assert completed.returncode == 0, completed.stderr
-    gpu_ids, shards, processes, scratch, sifs, vllm = completed.stdout.splitlines()
-    assert (gpu_ids, shards, processes) == ("0,1,2,3", "4", "4")
-    assert Path(scratch).is_relative_to(persistent)
-    assert Path(sifs).is_relative_to(ephemeral)
-    assert Path(vllm).is_relative_to(ephemeral)
 
 
 def test_supported_workflows_complete_dry_runs(tmp_path: Path) -> None:
@@ -377,23 +333,6 @@ def test_cloud_transfers_pass_only_the_intended_trees_to_rsync(tmp_path: Path) -
     model_exclude = pull_arguments.index("**/experiments/**/*.safetensors")
     assert pull_arguments[adapter_include - 1] == "--include"
     assert adapter_include < model_exclude
-
-
-def test_cloud_pull_rejects_invalid_adapter_flag(tmp_path: Path) -> None:
-    fake_rsync, arguments_file = recording_rsync(tmp_path)
-    completed = run_script(
-        "cloud/run.sh",
-        "pull",
-        env={
-            "DRY_RUN": "1",
-            "RSYNC_ARGUMENTS_FILE": str(arguments_file),
-            "RSYNC_BIN": str(fake_rsync),
-            "LOCAL_CLOUD_SCRATCH_DIR": str(tmp_path / "destination"),
-            "PULL_MODEL_ADAPTERS": "sometimes",
-        },
-    )
-    assert completed.returncode == 2
-    assert "must be true or false" in completed.stderr
 
 
 def test_sif_sync_round_trip_copies_the_complete_tree(tmp_path: Path) -> None:

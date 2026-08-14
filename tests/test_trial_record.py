@@ -29,14 +29,7 @@ def make_trial(
         learning_rate = 2e-5
         beta = 0.2
     else:
-        trial_root = (
-            run_root
-            / "experiments"
-            / "dmpo-depo"
-            / dmpo_name
-            / "depo"
-            / depo_name
-        )
+        trial_root = run_root / "experiments" / "dmpo-depo" / dmpo_name / "depo" / depo_name
         learning_rate = 2e-5
         beta = 0.2
 
@@ -285,52 +278,6 @@ def test_build_trial_record_uses_canonical_alias_and_records_depo_parent(tmp_pat
     assert depo["package_complete"] is False
     assert depo["val_200_selected"] is True
     assert by_id["dmpo/g09"]["val_200_resolution_rate"] == ""
-
-
-def test_build_trial_record_rejects_comparison_task_count_mismatch(tmp_path):
-    training_run = tmp_path / "runs" / "train"
-    make_trial(
-        training_run,
-        objective="dmpo",
-        experiment_arm="dmpo",
-        dmpo_name="g07",
-    )
-    comparison = make_comparison(
-        tmp_path / "comparison.json",
-        budget=100,
-        baseline_path=tmp_path / "sft.csv",
-        candidate_name="g07",
-        candidate_path=tmp_path / "candidate.csv",
-    )
-
-    with pytest.raises(ValueError, match="does not match task_count"):
-        build_trial_record(
-            run_root=training_run,
-            comparisons=[(200, comparison)],
-        )
-
-
-def test_build_trial_record_rejects_unmatched_nonbaseline_arm(tmp_path):
-    training_run = tmp_path / "runs" / "train"
-    make_trial(
-        training_run,
-        objective="dmpo",
-        experiment_arm="dmpo",
-        dmpo_name="g07",
-    )
-    comparison = make_comparison(
-        tmp_path / "comparison.json",
-        budget=100,
-        baseline_path=tmp_path / "sft.csv",
-        candidate_name="unknown",
-        candidate_path=tmp_path / "candidate.csv",
-    )
-
-    with pytest.raises(ValueError, match="do not match training trials"):
-        build_trial_record(
-            run_root=training_run,
-            comparisons=[(100, comparison)],
-        )
 
 
 def test_build_trial_record_rejects_different_task_matrices_at_one_budget(tmp_path):

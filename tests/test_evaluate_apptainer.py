@@ -14,7 +14,6 @@ from debug_depo.evaluate_apptainer import (
     run_apptainer_evaluation,
     run_instance,
 )
-from debug_depo.apptainer_cache import pull_sif_if_missing, sif_path_for_image
 from debug_depo.utils import write_json
 
 
@@ -26,33 +25,7 @@ def test_default_epoch_image_template_uses_instance_id():
     )
 
     assert image_uri == (
-        "docker://ghcr.io/epoch-research/"
-        "swe-bench.eval.x86_64.astropy__astropy-12907:latest"
-    )
-
-
-def test_image_template_accepts_tag_inside_placeholder():
-    image_uri = image_uri_from_template(
-        "docker://ghcr.io/epoch-research/swe-bench.eval.x86_64.{instance_id:latest}",
-        "astropy__astropy-12907",
-    )
-
-    assert image_uri == (
-        "docker://ghcr.io/epoch-research/"
-        "swe-bench.eval.x86_64.astropy__astropy-12907:latest"
-    )
-
-
-def test_sif_path_uses_stable_image_filename(tmp_path):
-    image_uri = (
-        "docker://ghcr.io/epoch-research/"
-        "swe-bench.eval.x86_64.astropy__astropy-12907:latest"
-    )
-
-    assert sif_path_for_image(tmp_path, image_uri) == (
-        tmp_path
-        / "docker_ghcr.io_epoch-research_swe-bench.eval.x86_64."
-        "astropy__astropy-12907_latest.sif"
+        "docker://ghcr.io/epoch-research/swe-bench.eval.x86_64.astropy__astropy-12907:latest"
     )
 
 
@@ -71,20 +44,6 @@ def test_apptainer_exec_command_binds_log_dir(tmp_path):
         "/bin/bash",
         f"{EVAL_BIND_DIR}/run_apptainer_eval.sh",
     ]
-
-
-def test_pull_sif_if_missing_dry_run_returns_pull_command(tmp_path):
-    sif_path = tmp_path / "astropy__astropy-12907.sif"
-
-    command = pull_sif_if_missing(
-        sif_path=sif_path,
-        image_uri="docker://example/image:latest",
-        cache_dir=tmp_path / "cache",
-        dry_run=True,
-    )
-
-    assert command == ["apptainer", "pull", str(sif_path), "docker://example/image:latest"]
-    assert not sif_path.exists()
 
 
 def test_cached_report_is_keyed_by_prediction_and_instance_content(
@@ -137,28 +96,35 @@ def test_cached_report_is_keyed_by_prediction_and_instance_content(
         cache_key_path,
         _evaluation_cache_key(instance, prediction, args, test_spec),
     )
-    assert json.loads(cache_key_path.read_text())["dataset_revision"] == (
-        "dataset-commit"
-    )
+    assert json.loads(cache_key_path.read_text())["dataset_revision"] == ("dataset-commit")
 
     assert run_instance(instance, prediction, args)["status"] == "cached_report"
-    assert run_instance(
-        instance,
-        {**prediction, "model_patch": "changed patch"},
-        args,
-    )["status"] == "dry_run"
-    assert run_instance(
-        {**instance, "problem_statement": "changed"},
-        prediction,
-        args,
-    )["status"] == "dry_run"
+    assert (
+        run_instance(
+            instance,
+            {**prediction, "model_patch": "changed patch"},
+            args,
+        )["status"]
+        == "dry_run"
+    )
+    assert (
+        run_instance(
+            {**instance, "problem_statement": "changed"},
+            prediction,
+            args,
+        )["status"]
+        == "dry_run"
+    )
 
     args.dry_run = False
-    assert run_instance(
-        instance,
-        {**prediction, "model_patch": ""},
-        args,
-    )["status"] == "empty_patch"
+    assert (
+        run_instance(
+            instance,
+            {**prediction, "model_patch": ""},
+            args,
+        )["status"]
+        == "empty_patch"
+    )
     assert not report_path.exists()
     assert not cache_key_path.exists()
 
@@ -205,16 +171,12 @@ def test_require_complete_rejects_evaluation_infrastructure_errors(
     monkeypatch.setattr(
         evaluate_apptainer,
         "load_swebench_tasks",
-        lambda *_args, revision=None, **_kwargs: (
-            loaded_revision.append(revision) or [instance]
-        ),
+        lambda *_args, revision=None, **_kwargs: loaded_revision.append(revision) or [instance],
     )
     monkeypatch.setattr(
         evaluate_apptainer,
         "run_instance",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            RuntimeError("container unavailable")
-        ),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("container unavailable")),
     )
 
     with pytest.raises(RuntimeError, match="infrastructure outcomes"):

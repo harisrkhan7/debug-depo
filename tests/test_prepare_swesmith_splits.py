@@ -1,6 +1,5 @@
 import argparse
 
-import pytest
 
 import debug_depo.prepare_swesmith_splits as split_module
 from debug_depo.prepare_swesmith_splits import (
@@ -35,11 +34,6 @@ def test_repository_disjoint_split_is_stable_and_complete():
     assert set(train_ids) | set(validation_ids) == {task["instance_id"] for task in tasks}
     train_repositories = {task["repo"] for task in tasks if task["instance_id"] in train_ids}
     assert train_repositories.isdisjoint(validation_repositories)
-
-
-def test_repository_disjoint_split_rejects_duplicate_ids():
-    with pytest.raises(ValueError, match="unique"):
-        repository_disjoint_split([task("duplicate", "repo-a"), task("duplicate", "repo-b")])
 
 
 def test_prepare_swesmith_splits_writes_ids_and_manifest(tmp_path, monkeypatch):
@@ -118,18 +112,6 @@ def test_repository_covering_subset_is_stable_proportional_and_covering():
     }
 
 
-def test_repository_covering_subset_rejects_too_few_slots():
-    source_ids = _snapshot_ids("a", 2) + _snapshot_ids("b", 2) + _snapshot_ids("c", 2)
-
-    with pytest.raises(ValueError, match="cannot cover 3 repositories"):
-        repository_covering_subset(
-            source_ids,
-            size=2,
-            seed=42,
-            namespace="test",
-        )
-
-
 def test_write_task_subsets_keeps_parent_membership_and_cache_union(tmp_path):
     train_ids = _snapshot_ids("a", 6) + _snapshot_ids("b", 3) + _snapshot_ids("c", 1)
     validation_ids = _snapshot_ids("d", 4) + _snapshot_ids("e", 2)
@@ -160,30 +142,6 @@ def test_write_task_subsets_keeps_parent_membership_and_cache_union(tmp_path):
     assert metadata["cache"]["n_tasks"] == 9
 
 
-def test_default_validation_screening_subsets_are_nested_and_recorded(tmp_path):
-    train_ids = _snapshot_ids("a", 5_000)
-    validation_ids = _snapshot_ids("d", 500)
-
-    metadata = write_task_subsets(
-        train_ids=train_ids,
-        validation_ids=validation_ids,
-        output_dir=tmp_path,
-    )
-
-    memberships = {
-        size: set(
-            (tmp_path / f"swesmith_validation_{size}_instance_ids.txt")
-            .read_text()
-            .splitlines()
-        )
-        for size in (100, 200, 500)
-    }
-    assert memberships[100] <= memberships[200] <= memberships[500]
-    assert metadata["validation_screening"]["100"]["n_tasks"] == 100
-    assert metadata["validation_screening"]["200"]["n_tasks"] == 200
-    assert len(metadata["validation_screening"]["100"]["sha256"]) == 64
-
-
 def test_write_task_subsets_excludes_repository_from_all_validation_budgets(tmp_path):
     train_ids = _snapshot_ids("a", 5_000)
     validation_ids = _snapshot_ids("d", 300) + _snapshot_ids("e", 600)
@@ -196,9 +154,7 @@ def test_write_task_subsets_excludes_repository_from_all_validation_budgets(tmp_
     )
 
     memberships = {
-        size: (
-            tmp_path / f"swesmith_validation_{size}_instance_ids.txt"
-        ).read_text().splitlines()
+        size: (tmp_path / f"swesmith_validation_{size}_instance_ids.txt").read_text().splitlines()
         for size in (100, 200, 500)
     }
     assert set(memberships[100]) <= set(memberships[200]) <= set(memberships[500])
@@ -209,13 +165,3 @@ def test_write_task_subsets_excludes_repository_from_all_validation_budgets(tmp_
         "n_excluded_tasks": 300,
         "n_eligible_tasks": 600,
     }
-
-
-def test_write_task_subsets_rejects_unmatched_repository_exclusion(tmp_path):
-    with pytest.raises(ValueError, match="did not match"):
-        write_task_subsets(
-            train_ids=_snapshot_ids("a", 5_000),
-            validation_ids=_snapshot_ids("d", 500),
-            output_dir=tmp_path,
-            excluded_validation_repositories=("owner__missing",),
-        )

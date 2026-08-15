@@ -10,6 +10,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -49,6 +50,8 @@ MINISWE_MODEL_TERMINAL_STATUSES = {
     "LimitsExceeded",
 }
 REDACTED_SECRET = "<redacted>"
+_ACTIVE_SUBPROCESSES: set[subprocess.Popen[str]] = set()
+_ACTIVE_SUBPROCESSES_LOCK = threading.RLock()
 SWEBENCH_TESTBED_PATH = (
     "/opt/miniconda3/envs/testbed/bin:"
     "/opt/miniconda3/bin:"
@@ -545,6 +548,57 @@ def _terminate_process_group(
     return int(process.returncode if process.returncode is not None else -signal.SIGKILL)
 
 
+def _register_active_subprocess(process: subprocess.Popen[str]) -> None:
+    with _ACTIVE_SUBPROCESSES_LOCK:
+        _ACTIVE_SUBPROCESSES.add(process)
+
+
+def _unregister_active_subprocess(process: subprocess.Popen[str]) -> None:
+    with _ACTIVE_SUBPROCESSES_LOCK:
+        _ACTIVE_SUBPROCESSES.discard(process)
+
+
+def active_subprocess_count() -> int:
+    """Return the number of rollout subprocesses currently owned by this collector."""
+
+    with _ACTIVE_SUBPROCESSES_LOCK:
+        return len(_ACTIVE_SUBPROCESSES)
+
+
+def terminate_active_subprocesses(*, grace_seconds: float = 5) -> None:
+    """Terminate every rollout subprocess currently owned by this collector."""
+
+    with _ACTIVE_SUBPROCESSES_LOCK:
+        processes = list(_ACTIVE_SUBPROCESSES)
+    if not processes:
+        return
+
+    for process in processes:
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+
+    deadline = time.monotonic() + grace_seconds
+    for process in processes:
+        if process.poll() is not None:
+            continue
+        try:
+            process.wait(timeout=max(0, deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            pass
+
+    # A wrapper can exit while a container descendant remains in its process
+    # group, so address every group again even if the direct child is gone.
+    for process in processes:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        if process.poll() is None:
+            process.wait()
+
+
 def run_subprocess_with_optional_streaming(
     command: str,
     *,
@@ -566,22 +620,26 @@ def run_subprocess_with_optional_streaming(
             stderr=subprocess.PIPE,
             start_new_session=True,
         )
+        _register_active_subprocess(process)
         try:
-            stdout, stderr = process.communicate(timeout=timeout_seconds)
-        except subprocess.TimeoutExpired as exc:
-            _terminate_process_group(process)
-            stdout, stderr = process.communicate()
+            try:
+                stdout, stderr = process.communicate(timeout=timeout_seconds)
+            except subprocess.TimeoutExpired as exc:
+                _terminate_process_group(process)
+                stdout, stderr = process.communicate()
+                stdout_path.write_text(stdout, encoding="utf-8")
+                stderr_path.write_text(stderr, encoding="utf-8")
+                raise subprocess.TimeoutExpired(
+                    command,
+                    timeout_seconds,
+                    output=stdout,
+                    stderr=stderr,
+                ) from exc
             stdout_path.write_text(stdout, encoding="utf-8")
             stderr_path.write_text(stderr, encoding="utf-8")
-            raise subprocess.TimeoutExpired(
-                command,
-                timeout_seconds,
-                output=stdout,
-                stderr=stderr,
-            ) from exc
-        stdout_path.write_text(stdout, encoding="utf-8")
-        stderr_path.write_text(stderr, encoding="utf-8")
-        return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+            return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+        finally:
+            _unregister_active_subprocess(process)
 
     process = subprocess.Popen(
         command,
@@ -594,6 +652,7 @@ def run_subprocess_with_optional_streaming(
         bufsize=1,
         start_new_session=True,
     )
+    _register_active_subprocess(process)
     stdout_chunks: list[str] = []
     stderr_chunks: list[str] = []
 
@@ -617,27 +676,30 @@ def run_subprocess_with_optional_streaming(
             daemon=True,
         ),
     ]
-    for thread in threads:
-        thread.start()
     try:
-        returncode = process.wait(timeout=timeout_seconds)
-    except subprocess.TimeoutExpired:
-        returncode = _terminate_process_group(process)
-        message = f"\nCommand timed out after {timeout_seconds} seconds.\n"
-        stderr_chunks.append(message)
-        with stderr_path.open("a", encoding="utf-8") as handle:
-            handle.write(message)
-        sys.stderr.write(message)
-        sys.stderr.flush()
-    for thread in threads:
-        thread.join(timeout=5)
+        for thread in threads:
+            thread.start()
+        try:
+            returncode = process.wait(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired:
+            returncode = _terminate_process_group(process)
+            message = f"\nCommand timed out after {timeout_seconds} seconds.\n"
+            stderr_chunks.append(message)
+            with stderr_path.open("a", encoding="utf-8") as handle:
+                handle.write(message)
+            sys.stderr.write(message)
+            sys.stderr.flush()
+        for thread in threads:
+            thread.join(timeout=5)
 
-    return subprocess.CompletedProcess(
-        args=command,
-        returncode=returncode,
-        stdout="".join(stdout_chunks),
-        stderr="".join(stderr_chunks),
-    )
+        return subprocess.CompletedProcess(
+            args=command,
+            returncode=returncode,
+            stdout="".join(stdout_chunks),
+            stderr="".join(stderr_chunks),
+        )
+    finally:
+        _unregister_active_subprocess(process)
 
 
 def _redacted_trajectory_config(config: AgentForgeConfig) -> dict[str, Any]:

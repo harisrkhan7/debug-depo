@@ -8,6 +8,8 @@ import json
 import math
 import os
 import re
+import signal
+import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import replace
@@ -16,7 +18,13 @@ from typing import Any, Callable
 
 from tqdm.auto import tqdm
 
-from debug_depo.agentforge import AgentForgeConfig, prediction_record, run_agentforge_instance
+from debug_depo.agentforge import (
+    AgentForgeConfig,
+    active_subprocess_count,
+    prediction_record,
+    run_agentforge_instance,
+    terminate_active_subprocesses,
+)
 from debug_depo.constants import (
     DEFAULT_AGENTFORGE_MODEL,
     DEFAULT_CONTEXT_LENGTH,
@@ -511,8 +519,21 @@ def _execute_rollouts(
         else:
             with ThreadPoolExecutor(max_workers=args.rollout_workers) as pool:
                 futures = [pool.submit(run, job) for job in jobs]
-                for future in as_completed(futures):
-                    save(future.result())
+                try:
+                    for future in as_completed(futures):
+                        save(future.result())
+                except BaseException as exc:
+                    print(
+                        f"Collector executor stopping after {type(exc).__name__}: {exc}; "
+                        f"active rollout subprocesses={active_subprocess_count()}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    for future in futures:
+                        future.cancel()
+                    terminate_active_subprocesses()
+                    pool.shutdown(wait=True, cancel_futures=True)
+                    raise
 
     if len(results) != len(jobs):
         raise RuntimeError("Collection ended before every SWE-smith rollout produced a result")
@@ -762,8 +783,33 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    collect_swesmith(args)
-    return 0
+    handled_signals = [signal.SIGINT, signal.SIGTERM]
+    if hasattr(signal, "SIGHUP"):
+        handled_signals.append(signal.SIGHUP)
+    previous_handlers = {signum: signal.getsignal(signum) for signum in handled_signals}
+
+    def handle_termination(signum: int, _frame: object) -> None:
+        signal_name = signal.Signals(signum).name
+        try:
+            print(
+                f"Collector received {signal_name} ({signum}); "
+                f"active rollout subprocesses={active_subprocess_count()}; cleaning up",
+                file=sys.stderr,
+                flush=True,
+            )
+        finally:
+            terminate_active_subprocesses()
+        raise SystemExit(128 + signum)
+
+    for signum in handled_signals:
+        signal.signal(signum, handle_termination)
+    try:
+        collect_swesmith(args)
+        return 0
+    finally:
+        terminate_active_subprocesses()
+        for signum, previous_handler in previous_handlers.items():
+            signal.signal(signum, previous_handler)
 
 
 if __name__ == "__main__":

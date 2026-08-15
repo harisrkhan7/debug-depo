@@ -184,6 +184,30 @@ def test_shard_supervisor_detects_vllm_exit(tmp_path: Path) -> None:
     assert "vLLM exited" in completed.stderr
 
 
+def test_shard_supervisor_reports_collector_sigkill(tmp_path: Path) -> None:
+    completed = run_script(
+        "-c",
+        (
+            "source cloud/common.sh; "
+            "sleep 30 & vllm_pid=$!; bash -c 'exit 137' & collector_pid=$!; "
+            'supervise_collector "$vllm_pid" "$collector_pid" 0 1 '
+            '"$TEST_ACTIVITY_PATH"; status=$?; '
+            'kill "$vllm_pid"; wait "$vllm_pid" 2>/dev/null; '
+            "printf '%s\n' \"$status\""
+        ),
+        env={
+            "CLOUD_PERSISTENT_ROOT": str(tmp_path / "persistent"),
+            "CLOUD_EPHEMERAL_ROOT": str(tmp_path / "ephemeral"),
+            "TEST_ACTIVITY_PATH": str(tmp_path / "activity.log"),
+        },
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "137"
+    assert "Collector exited with status 137 (signal 9 SIGKILL)." in completed.stderr
+    assert "failure diagnostics" in completed.stderr
+
+
 def test_shard_supervisor_detects_no_progress(tmp_path: Path) -> None:
     completed = run_script(
         "-c",

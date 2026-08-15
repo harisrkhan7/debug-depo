@@ -122,6 +122,7 @@ require_project_environment
 
 cd "$DEBUG_DEPO_ROOT"
 mkdir -p "$LOG_DIR"
+collection_log_stamp="$(date -u '+%Y%m%dT%H%M%SZ')"
 
 shard_pids=()
 cleanup_shards() {
@@ -130,7 +131,17 @@ cleanup_shards() {
     wait "${shard_pids[@]}" 2>/dev/null || true
   fi
 }
-trap cleanup_shards HUP INT TERM
+handle_collection_signal() {
+  local status="$1"
+  local signal_name="$2"
+  echo "Collection supervisor received SIG${signal_name}; cleaning up shards." >&2
+  trap - HUP INT TERM
+  cleanup_shards
+  exit "$status"
+}
+trap 'handle_collection_signal 129 HUP' HUP
+trap 'handle_collection_signal 130 INT' INT
+trap 'handle_collection_signal 143 TERM' TERM
 
 run_shard() {
   local shard_index="$1"
@@ -166,7 +177,18 @@ run_shard() {
     fi
     active_vllm_pid=""
   }
-  trap cleanup_active_attempt EXIT HUP INT TERM
+  handle_attempt_signal() {
+    local status="$1"
+    local signal_name="$2"
+    echo "Shard $shard_index received SIG${signal_name}; cleaning up its active attempt." >&2
+    trap - EXIT HUP INT TERM
+    cleanup_active_attempt
+    exit "$status"
+  }
+  trap cleanup_active_attempt EXIT
+  trap 'handle_attempt_signal 129 HUP' HUP
+  trap 'handle_attempt_signal 130 INT' INT
+  trap 'handle_attempt_signal 143 TERM' TERM
 
   local attempt
   local attempt_stamp
@@ -261,10 +283,16 @@ run_shard() {
 
 for ((shard_index = 0; shard_index < NUM_SHARDS; shard_index++)); do
   gpu_id="${CLOUD_GPU_ID_ARRAY[$shard_index]}"
-  collector_log="$LOG_DIR/collect-$FAMILY-shard-$shard_index.log"
+  collector_link="$LOG_DIR/collect-$FAMILY-shard-$shard_index.log"
+  collector_log="$LOG_DIR/collect-$FAMILY-shard-$shard_index.run-${collection_log_stamp}-$$.log"
+  if [[ -e "$collector_link" && ! -L "$collector_link" ]]; then
+    mv "$collector_link" \
+      "$LOG_DIR/collect-$FAMILY-shard-$shard_index.before-supervisor-${collection_log_stamp}.log"
+  fi
+  ln -sfn "$(basename "$collector_log")" "$collector_link"
   run_shard "$shard_index" "$gpu_id" "$collector_log" >"$collector_log" 2>&1 &
   shard_pids+=("$!")
-  echo "Started shard $shard_index on GPU $gpu_id (log: $collector_log)"
+  echo "Started shard $shard_index on GPU $gpu_id (log: $collector_link)"
 done
 
 failed=0

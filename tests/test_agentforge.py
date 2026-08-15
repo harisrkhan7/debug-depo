@@ -18,8 +18,9 @@ from debug_depo.agentforge import (
     miniswe_result_status,
     render_command,
     render_miniswe_command,
-    run_subprocess_with_optional_streaming,
     run_agentforge_instance,
+    run_subprocess_with_optional_streaming,
+    terminate_active_subprocesses,
 )
 from debug_depo.utils import read_json
 
@@ -350,3 +351,37 @@ def test_subprocess_timeout_terminates_the_complete_process_group(
     ]
     assert (tmp_path / "stdout.txt").read_text() == "partial stdout"
     assert (tmp_path / "stderr.txt").read_text() == "partial stderr"
+
+
+def test_active_rollout_cleanup_terminates_registered_process_groups(monkeypatch):
+    class ActiveProcess:
+        pid = 4321
+        returncode = None
+
+        def poll(self):
+            return self.returncode
+
+        def wait(self, timeout=None):
+            if self.returncode is None:
+                raise subprocess.TimeoutExpired("command", timeout)
+            return self.returncode
+
+    process = ActiveProcess()
+    signals = []
+
+    def fake_killpg(process_group, sent_signal):
+        signals.append((process_group, sent_signal))
+        if sent_signal == signal.SIGKILL:
+            process.returncode = -sent_signal
+
+    monkeypatch.setattr(agentforge_module.os, "killpg", fake_killpg)
+    agentforge_module._register_active_subprocess(process)
+    try:
+        terminate_active_subprocesses(grace_seconds=0)
+    finally:
+        agentforge_module._unregister_active_subprocess(process)
+
+    assert signals == [
+        (process.pid, signal.SIGTERM),
+        (process.pid, signal.SIGKILL),
+    ]

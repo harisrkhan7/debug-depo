@@ -240,6 +240,46 @@ latest_activity_epoch() {
 CLOUD_SUPERVISOR_VLLM_EXIT=70
 CLOUD_SUPERVISOR_STALL=71
 
+describe_process_status() {
+  local status="$1"
+  local signal_number
+  local signal_name
+  if ((status > 128)); then
+    signal_number=$((status - 128))
+    signal_name="$(kill -l "$signal_number" 2>/dev/null || printf 'UNKNOWN')"
+    printf '%s (signal %s SIG%s)' "$status" "$signal_number" "$signal_name"
+  else
+    printf '%s' "$status"
+  fi
+}
+
+log_failure_diagnostics() {
+  local vllm_pid="${1:-}"
+  local collector_pid="${2:-}"
+  echo "===== failure diagnostics $(date -u '+%Y-%m-%dT%H:%M:%SZ') =====" >&2
+  if command -v free >/dev/null 2>&1; then
+    free -h >&2 || true
+  fi
+  if [[ -r /proc/meminfo ]]; then
+    awk '/^(MemTotal|MemFree|MemAvailable|Buffers|Cached|SwapTotal|SwapFree|Slab):/' \
+      /proc/meminfo >&2 || true
+  fi
+  echo "Tracked processes: vLLM=$vllm_pid collector=$collector_pid" >&2
+  ps -o pid,ppid,pgid,rss,state,comm -p "$vllm_pid,$collector_pid" >&2 2>/dev/null || true
+  echo "Largest host processes by RSS (KiB):" >&2
+  if ! ps -eo pid,ppid,pgid,sid,rss,stat,comm,args --sort=-rss 2>/dev/null \
+    | sed -n '1,21p' >&2; then
+    ps -axo pid,ppid,pgid,rss,state,comm 2>/dev/null | sed -n '1,21p' >&2 || true
+  fi
+  if command -v timeout >/dev/null 2>&1 && command -v nvidia-smi >/dev/null 2>&1; then
+    echo "GPU memory:" >&2
+    timeout 10s nvidia-smi \
+      --query-gpu=index,memory.used,memory.total,utilization.gpu \
+      --format=csv,noheader >&2 || echo "nvidia-smi diagnostic failed or timed out." >&2
+  fi
+  echo "===== end failure diagnostics =====" >&2
+}
+
 supervise_collector() {
   local vllm_pid="$1"
   local collector_pid="$2"
@@ -250,11 +290,13 @@ supervise_collector() {
   local last_activity
   local observed_activity
   local now
+  local collector_status
 
   last_activity="$(date +%s)"
   while kill -0 "$collector_pid" 2>/dev/null; do
     if ! kill -0 "$vllm_pid" 2>/dev/null; then
       echo "vLLM exited while its collector was still running." >&2
+      log_failure_diagnostics "$vllm_pid" "$collector_pid"
       return "$CLOUD_SUPERVISOR_VLLM_EXIT"
     fi
 
@@ -265,12 +307,22 @@ supervise_collector() {
     now="$(date +%s)"
     if ((stall_timeout_seconds > 0 && now - last_activity >= stall_timeout_seconds)); then
       echo "Shard made no collector progress for ${stall_timeout_seconds}s." >&2
+      log_failure_diagnostics "$vllm_pid" "$collector_pid"
       return "$CLOUD_SUPERVISOR_STALL"
     fi
     sleep "$interval_seconds"
   done
 
-  wait "$collector_pid"
+  if wait "$collector_pid"; then
+    collector_status=0
+  else
+    collector_status=$?
+  fi
+  echo "Collector exited with status $(describe_process_status "$collector_status")." >&2
+  if ((collector_status != 0)); then
+    log_failure_diagnostics "$vllm_pid" "$collector_pid"
+  fi
+  return "$collector_status"
 }
 
 terminate_process_group() {

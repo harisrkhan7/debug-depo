@@ -13,6 +13,7 @@ case "$FAMILY" in
     DATASET="${DATASET:-princeton-nlp/SWE-bench_Verified}"
     SPLIT="${SPLIT:-test}"
     TASK_IDS_FILE="${TASK_IDS_FILE:-}"
+    CONTEXT_LENGTH="${CONTEXT_LENGTH:-65536}"
     ;;
   swesmith)
     RUN_NAME="${RUN_NAME:-swesmith-train-1000}"
@@ -20,6 +21,7 @@ case "$FAMILY" in
     DATASET="${DATASET:-SWE-bench/SWE-smith-py}"
     SPLIT="${SPLIT:-train}"
     TASK_IDS_FILE="${TASK_IDS_FILE:-data/splits/swesmith_train_1000_instance_ids.txt}"
+    CONTEXT_LENGTH="${CONTEXT_LENGTH:-32768}"
     ;;
   *)
     echo "Usage: bash cloud/collect.sh verified|swesmith" >&2
@@ -46,7 +48,6 @@ RUN_ROOT="${RUN_ROOT:-$DEBUG_DEPO_SCRATCH/runs/$RUN_NAME}"
 LOG_DIR="${LOG_DIR:-$RUN_ROOT/cloud-logs}"
 AGENTFORGE_MODEL="${AGENTFORGE_MODEL:-Kwai-Klear/Klear-AgentForge-8B-SFT}"
 MINI_SWE_MODEL="${MINI_SWE_MODEL:-hosted_vllm/$AGENTFORGE_MODEL}"
-CONTEXT_LENGTH="${CONTEXT_LENGTH:-65536}"
 MAX_STEPS="${MAX_STEPS:-200}"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-21600}"
 VLLM_MODEL="${VLLM_MODEL:-$AGENTFORGE_MODEL}"

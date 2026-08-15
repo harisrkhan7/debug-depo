@@ -123,9 +123,10 @@ interval (five optimizer steps by default), with the learning rate, epoch, and
 number of contributing micro-batches. The final partial interval is also
 recorded, and resume trims observations newer than the selected checkpoint.
 
-The current experiment collects and evaluates with a 32,768-token context and
-trains with `MAX_LENGTH=8192`. Keep collection and evaluation aligned while
-setting the shorter training limit explicitly. The builders
+The current experiment collects SWE-smith trajectories with a 32,768-token
+context, tests packaged models on SWE-bench Verified with a 65,536-token
+context, and trains with `MAX_LENGTH=8192`. Set these limits explicitly when
+reproducing an experiment. The builders
 select four temperature-balanced slots per task: `0,1,4,5` for the current
 two-temperature layout or `0,4,8,12` for four temperatures. Override with
 `PREFERENCE_SAMPLE_INDICES`, or set `PREFERENCE_MAX_ROLLOUTS=0` for all
@@ -151,7 +152,7 @@ RUN_NAME=swesmith-pilot-20260719 \
 EXPERIMENT_ARM=dmpo \
 DMPO_TRIAL_NAME=gamma07 \
 MAX_LENGTH=8192 \
-EVAL_CONTEXT_LENGTH=32768 \
+EVAL_CONTEXT_LENGTH=65536 \
 cluster/submit_preference_training.sh
 ```
 
@@ -164,7 +165,7 @@ DMPO_MODE=reuse \
 DMPO_TRIAL_NAME=gamma07 \
 DEPO_TRIAL_NAME=alpha2 \
 MAX_LENGTH=8192 \
-EVAL_CONTEXT_LENGTH=32768 \
+EVAL_CONTEXT_LENGTH=65536 \
 cluster/submit_preference_training.sh
 ```
 
@@ -195,14 +196,14 @@ Preview independent held-out evaluation:
 PREFERENCE_OBJECTIVE=dmpo \
 EXPERIMENT_ARM=dmpo \
 TRAIN_RUN_NAME=swesmith-train-5000 \
-EVAL_CONTEXT_LENGTH=32768 \
+EVAL_CONTEXT_LENGTH=65536 \
 DRY_RUN=1 \
 cluster/submit_preference_evaluation.sh
 
 PREFERENCE_OBJECTIVE=depo \
 EXPERIMENT_ARM=dmpo-depo \
 TRAIN_RUN_NAME=swesmith-train-5000 \
-EVAL_CONTEXT_LENGTH=32768 \
+EVAL_CONTEXT_LENGTH=65536 \
 DRY_RUN=1 \
 cluster/submit_preference_evaluation.sh
 ```

@@ -68,11 +68,11 @@ case "$ACTION" in
   train)
     exec bash "$CLOUD_DIR/preference.sh" all "$@"
     ;;
+  test)
+    exec bash "$CLOUD_DIR/run_swebench_verified_test.sh" "$@"
+    ;;
   validate)
     exec bash "$CLOUD_DIR/validate.sh" "$@"
-    ;;
-  validate-model)
-    exec bash "$CLOUD_DIR/validate_model.sh" "$@"
     ;;
   help|-h|--help)
     cat <<'MSG'
@@ -99,8 +99,8 @@ Actions:
   dmpo                          train/package DMPO on all detected GPUs
   depo                          train/package DEPO on all detected GPUs
   train                         build data, then train DMPO -> DEPO
+  test                          test SFT, DMPO, then DEPO on SWE-bench Verified
   validate                      run one deterministic rollout per supplied SWE-smith task
-  validate-model dmpo|depo      evaluate a packaged model on Verified
 MSG
     ;;
   *)

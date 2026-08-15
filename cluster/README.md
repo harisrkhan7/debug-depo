@@ -438,16 +438,16 @@ Then build all 500 Verified SIFs plus the SWE-smith SIFs required by the
 tracked 5,000-task training and 500-task validation samples:
 
 ```bash
-SWESMITH_TASK_IDS_FILE=data/splits/swesmith_cache_5500_instance_ids.txt \
+SWESMITH_TASK_IDS_FILE=data/splits/swesmith_cache_5700_instance_ids.txt \
   DRY_RUN=1 cluster/submit_apptainer_cache_full.sh
-SWESMITH_TASK_IDS_FILE=data/splits/swesmith_cache_5500_instance_ids.txt \
+SWESMITH_TASK_IDS_FILE=data/splits/swesmith_cache_5700_instance_ids.txt \
   cluster/submit_apptainer_cache_full.sh
 ```
 
 Use the validation membership instead when preparing a validation-only run:
 
 ```bash
-SWESMITH_TASK_IDS_FILE=data/splits/swesmith_validation_500_instance_ids.txt \
+SWESMITH_TASK_IDS_FILE=data/splits/swesmith_validation_confirmatory_balanced_500_instance_ids.txt \
   cluster/submit_apptainer_cache_full.sh
 ```
 
@@ -467,6 +467,17 @@ Standalone cache-build PBS logs are stored under
 `$DEBUG_DEPO_SCRATCH/runs/apptainer-cache-{smoke,full}/cluster-logs/`. The
 cache-first pilot helper instead puts its cache log in the pilot run's
 `cluster-logs/` directory with the downstream jobs.
+
+Before SWE-smith collection, check that every selected task ref is available
+inside the cached repository images:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/preflight_swesmith_branches.py \
+  --instance-ids-file \
+    data/splits/swesmith_validation_confirmatory_balanced_500_instance_ids.txt
+```
+
+The check is read-only and does not require GPUs or a model server.
 
 The smoke template reserves 8 CPUs and 64 GB for 24 hours and runs two pulls
 concurrently. The full template reserves 32 CPUs and 128 GB for 48 hours and
@@ -744,7 +755,7 @@ finishes. By default, each completed package is evaluated on the existing
 `cluster/submit_verified_full.sh` workflow. It uses the existing ten-element
 rollout array, one CPU-only evaluation job, and one analysis job; no 50-element
 array is introduced. Each model receives one temperature-0 attempt per task at
-a 32K context. Results are isolated under:
+a 64K context. Results are isolated under:
 
 ```text
 $DEBUG_DEPO_SCRATCH/runs/<training-run>-dmpo-<dmpo-trial>-evaluation-500/
@@ -776,9 +787,10 @@ choice, or `PREFERENCE_MAX_ROLLOUTS=0` to use every collected rollout. DMPO and
 DEPO receive the same selection. The submission wrapper also accepts commas
 and converts them to the colon form required inside `qsub -v`.
 
-The current experiment collects and evaluates at 32,768 tokens and trains at
-8,192 tokens, so preference training can truncate long trajectories from the
-32K collection. Set these lengths explicitly when submitting jobs. Training
+The current experiment collects SWE-smith trajectories at 32,768 tokens,
+evaluates packaged models on SWE-bench Verified at 65,536 tokens, and trains at
+8,192 tokens. Preference training can therefore truncate long trajectories
+from the 32K collection. Set these lengths explicitly when submitting jobs. Training
 uses bf16,
 PyTorch SDPA, gradient checkpointing, one trajectory per device, and gradient
 accumulation of 32 on the one-GPU template. Shared preference defaults live in
@@ -820,7 +832,7 @@ RUN_NAME=swesmith-train-5000 \
 EXPERIMENT_ARM=dmpo \
 DMPO_TRIAL_NAME=gamma07 \
 MAX_LENGTH=8192 \
-EVAL_CONTEXT_LENGTH=32768 \
+EVAL_CONTEXT_LENGTH=65536 \
 cluster/submit_preference_training.sh
 ```
 
@@ -833,7 +845,7 @@ DMPO_MODE=reuse \
 DMPO_TRIAL_NAME=gamma07 \
 DEPO_TRIAL_NAME=alpha2 \
 MAX_LENGTH=8192 \
-EVAL_CONTEXT_LENGTH=32768 \
+EVAL_CONTEXT_LENGTH=65536 \
 cluster/submit_preference_training.sh
 ```
 

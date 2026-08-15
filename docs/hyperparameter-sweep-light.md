@@ -23,9 +23,8 @@ The plan requires at most six training runs:
 - three DEPO configurations, all initialized from the selected DMPO model.
 
 At 500 tasks, evaluate only the selected DMPO and selected DMPO-to-DEPO models.
-Reuse the existing SFT result on the same 500 tasks as the baseline. If that SFT
-result does not exist, it must also be evaluated; otherwise success and cost
-comparisons are not valid.
+Evaluate SFT on the same confirmatory 500-task membership so every comparison
+uses an identical task matrix.
 
 ## Fixed settings
 
@@ -36,7 +35,7 @@ Do not vary these settings:
 | Training tasks | 1,000 |
 | Collection context length | 32,768 for every rollout |
 | Training sequence length | 8,192 for DMPO and DEPO |
-| Evaluation context length | 32,768 for every arm |
+| Evaluation context length | 65,536 for every arm |
 | Epochs | 3 |
 | Per-device batch size | 1 |
 | Gradient accumulation | 32 |
@@ -49,7 +48,8 @@ Do not vary these settings:
 Use the fixed repository split files:
 
 - screening: `data/splits/swesmith_validation_200_instance_ids.txt`;
-- final validation: `data/splits/swesmith_validation_500_instance_ids.txt`.
+- final validation:
+  `data/splits/swesmith_validation_confirmatory_balanced_500_instance_ids.txt`.
 
 Build the preference data once and reuse it for every trial.
 
@@ -113,13 +113,13 @@ Validate exactly these two preference-trained candidates:
 1. the selected DMPO model;
 2. the selected DMPO-to-DEPO model.
 
-Compare both with the cached SFT result on the identical 500-task matrix. Apply
+Compare both with the SFT result on the identical 500-task matrix. Apply
 the same three-percentage-point constraint, which permits at most fifteen fewer
 resolved tasks than SFT. Report resolution rate, total tokens per resolved task,
 steps, and gained/lost SFT successes.
 
-The 500-task result is the final selection result. Do not use it to launch a new
-hyperparameter round.
+The 500-task result is the confirmatory validation result. Do not use it to
+launch a new hyperparameter round.
 
 ## Command templates
 
@@ -169,8 +169,8 @@ CONTEXT_LENGTH=32768 \
 ```
 
 For final validation, change only the unique run name and task file to
-`swesmith_validation_500_instance_ids.txt`. Keep the context, temperature,
-rollout count, and step limit unchanged.
+`swesmith_validation_confirmatory_balanced_500_instance_ids.txt`. Keep the
+context, temperature, rollout count, and step limit unchanged.
 
 ## Summary
 

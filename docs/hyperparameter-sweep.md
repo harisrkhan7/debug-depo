@@ -22,33 +22,10 @@ hyperparameter-optimization resource and stopping weak configurations early
 ([Li et al., 2018](#references)). This project uses a simpler fixed funnel
 rather than claiming to implement Hyperband.
 
-## Fixed validation memberships
-
-Use these immutable, repository-covering samples:
-
-| Budget | Task-ID file | Repositories | Ordered-file SHA-256 |
-| ---: | --- | ---: | --- |
-| 100 | `data/splits/swesmith_validation_100_instance_ids.txt` | 14 | `99e09b02b651e89282f76b994bac6e82be1776928d5c09d1ce8721806493fcf9` |
-| 200 | `data/splits/swesmith_validation_200_instance_ids.txt` | 14 | `a27dcfa4bafb154f3b70baf51ab50696f6b7e3f978bcc845b2f2d72091c437fb` |
-| 500 | `data/splits/swesmith_validation_500_instance_ids.txt` | 14 | `dd6342f7f4cb79ea206f523517fef7f3367f4a779cf0c088abf5b0e91088b154` |
-
-All three use the split policy's seed 42, repository grouping, proportional
-quota allocation, and SHA-256 selection and ordering. They are nested:
-
-```text
-validation-100 subset of validation-200 subset of validation-500
-```
-
-Do not redraw a subset after observing results. Use the same task membership,
-evaluation temperature, rollout count, context length, step limit, and scoring
-pipeline for every arm at a given budget.
-
-Because the 100 and 200 tasks are contained in the 500, the 500-task result is
-a higher-budget validation result, not an untouched test estimate. Report it
-as validation performance. A final generalization claim needs a separate test
-set that was not used for model or hyperparameter selection. Optimizing a
-finite, noisy validation criterion can itself overfit and bias the reported
-performance ([Cawley and Talbot, 2010](#references)).
+The immutable task memberships and their sampling policies are documented in
+[Dataset splits](dataset-splits.md). Use the same membership, evaluation
+temperature, rollout count, context length, step limit, and scoring pipeline
+for every arm at a given stage.
 
 ## Selection objective
 
@@ -87,7 +64,7 @@ Hold these settings fixed:
 | Base model | `Kwai-Klear/Klear-AgentForge-8B-SFT` | Current reference policy |
 | Collection context length | 32,768 | Match the current rollout collection |
 | Maximum training length | 8,192 | Current preference-training budget |
-| Evaluation context length | 32,768 | Match packaged-model evaluation |
+| Evaluation context length | 65,536 | Match packaged-model Verified evaluation |
 | Maximum evaluation steps | 200 | Current full-evaluation budget |
 | Per-device batch size | 1 | Long-context memory constraint |
 | Gradient accumulation | 16 | Effective batch 128 on eight GPUs |

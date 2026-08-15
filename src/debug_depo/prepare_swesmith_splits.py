@@ -24,9 +24,14 @@ DEFAULT_SPLIT_SEED = 42
 DEFAULT_TRAJECTORY_SUBSET_SIZE = 5_000
 DEFAULT_VALIDATION_SUBSET_SIZE = 500
 DEFAULT_VALIDATION_SCREENING_SIZES = (100, 200)
-SPLIT_MANIFEST_SCHEMA_VERSION = 4
+DEFAULT_VALIDATION_DESIGN = "nested-proportional"
+VALIDATION_DESIGNS = (DEFAULT_VALIDATION_DESIGN, "disjoint-balanced")
+SPLIT_MANIFEST_SCHEMA_VERSION = 5
 TRAJECTORY_SUBSET_FILENAME = "swesmith_train_5000_instance_ids.txt"
 VALIDATION_SUBSET_FILENAME = "swesmith_validation_500_instance_ids.txt"
+CONFIRMATORY_VALIDATION_SUBSET_FILENAME = (
+    "swesmith_validation_confirmatory_balanced_500_instance_ids.txt"
+)
 CACHE_SUBSET_FILENAME = "swesmith_cache_5500_instance_ids.txt"
 
 
@@ -122,6 +127,59 @@ def repository_covering_subset(
     return sorted(selected, key=lambda item: rank(item, "order"))
 
 
+def repository_balanced_subset(
+    instance_ids: list[str],
+    *,
+    size: int,
+    seed: int,
+    namespace: str,
+) -> list[str]:
+    """Select a deterministic subset with near-equal repository quotas."""
+
+    if len(instance_ids) != len(set(instance_ids)):
+        raise ValueError("Source instance IDs must be unique")
+    if not 1 <= size <= len(instance_ids):
+        raise ValueError(f"Subset size must be between 1 and {len(instance_ids)}, got {size}")
+
+    by_repository: dict[str, list[str]] = defaultdict(list)
+    for instance_id in instance_ids:
+        by_repository[_repository_snapshot(instance_id)].append(instance_id)
+    if size < len(by_repository):
+        raise ValueError(f"Subset size {size} cannot cover {len(by_repository)} repositories")
+
+    def rank(value: str, stage: str) -> str:
+        return hashlib.sha256(
+            f"{seed}\0{namespace}\0{stage}\0{value}".encode("utf-8")
+        ).hexdigest()
+
+    # Repeatedly give a slot to a repository with the smallest current quota.
+    # Repositories that run out of tasks leave the heap, so their unused share
+    # is redistributed as evenly as possible among the remaining repositories.
+    quotas = {repository: 0 for repository in by_repository}
+    allocation_heap = [
+        (0, rank(repository, "quota"), repository) for repository in by_repository
+    ]
+    heapq.heapify(allocation_heap)
+    for _ in range(size):
+        quota, tie_breaker, repository = heapq.heappop(allocation_heap)
+        quotas[repository] = quota + 1
+        if quotas[repository] < len(by_repository[repository]):
+            heapq.heappush(
+                allocation_heap,
+                (quotas[repository], tie_breaker, repository),
+            )
+
+    selected = {
+        instance_id
+        for repository, repository_ids in by_repository.items()
+        for instance_id in sorted(
+            repository_ids,
+            key=lambda item: rank(item, "sample"),
+        )[: quotas[repository]]
+    }
+    return sorted(selected, key=lambda item: rank(item, "order"))
+
+
 def write_task_subsets(
     *,
     train_ids: list[str],
@@ -131,6 +189,9 @@ def write_task_subsets(
     validation_subset_size: int = DEFAULT_VALIDATION_SUBSET_SIZE,
     validation_screening_sizes: tuple[int, ...] | None = None,
     excluded_validation_repositories: tuple[str, ...] = (),
+    validation_design: str = DEFAULT_VALIDATION_DESIGN,
+    confirmation_excluded_ids: tuple[str, ...] = (),
+    confirmation_exclusion_sources: tuple[str, ...] = (),
     seed: int = DEFAULT_SPLIT_SEED,
 ) -> dict[str, Any]:
     """Write training, validation, and cache-union task-ID files."""
@@ -141,6 +202,11 @@ def write_task_subsets(
     validation_repositories = {_repository_snapshot(item) for item in validation_ids}
     if train_repositories & validation_repositories:
         raise ValueError("Source train and validation memberships must be repository-disjoint")
+    if validation_design not in VALIDATION_DESIGNS:
+        raise ValueError(
+            f"Validation design must be one of {', '.join(VALIDATION_DESIGNS)}, "
+            f"got {validation_design!r}"
+        )
 
     exclusion_selectors = tuple(
         dict.fromkeys(
@@ -184,12 +250,6 @@ def write_task_subsets(
         seed=seed,
         namespace="trajectory",
     )
-    selected_validation_ids = repository_covering_subset(
-        eligible_validation_ids,
-        size=validation_subset_size,
-        seed=seed,
-        namespace="validation",
-    )
     if validation_screening_sizes is None:
         validation_screening_sizes = (
             DEFAULT_VALIDATION_SCREENING_SIZES
@@ -217,14 +277,82 @@ def write_task_subsets(
             raise ValueError(
                 f"Validation screening memberships are not nested at budget {size}"
             )
-        if not screening_id_set <= set(selected_validation_ids):
-            raise ValueError(
-                f"Validation screening budget {size} is not contained in the "
-                f"{validation_subset_size}-task validation subset"
-            )
         screening_subsets[size] = screening_ids
         previous_ids = screening_id_set
-    cache_ids = trajectory_ids + selected_validation_ids
+
+    confirmation_excluded_id_set = set(confirmation_excluded_ids)
+    if len(confirmation_excluded_ids) != len(confirmation_excluded_id_set):
+        raise ValueError("Confirmation-excluded instance IDs must be unique")
+    unknown_confirmation_exclusions = confirmation_excluded_id_set - set(
+        eligible_validation_ids
+    )
+    if unknown_confirmation_exclusions:
+        raise ValueError(
+            "Confirmation-excluded IDs are not in the eligible validation parent: "
+            + ", ".join(sorted(unknown_confirmation_exclusions)[:5])
+        )
+
+    if validation_design == DEFAULT_VALIDATION_DESIGN:
+        if confirmation_excluded_id_set:
+            raise ValueError(
+                "Confirmation exclusions are only supported by the disjoint-balanced design"
+            )
+        selected_validation_ids = repository_covering_subset(
+            eligible_validation_ids,
+            size=validation_subset_size,
+            seed=seed,
+            namespace="validation",
+        )
+        selected_validation_id_set = set(selected_validation_ids)
+        for size, screening_ids in screening_subsets.items():
+            if not set(screening_ids) <= selected_validation_id_set:
+                raise ValueError(
+                    f"Validation screening budget {size} is not contained in the "
+                    f"{validation_subset_size}-task validation subset"
+                )
+        validation_filename = (
+            VALIDATION_SUBSET_FILENAME
+            if validation_subset_size == DEFAULT_VALIDATION_SUBSET_SIZE
+            else f"swesmith_validation_{validation_subset_size}_instance_ids.txt"
+        )
+        cache_ids = trajectory_ids + selected_validation_ids
+        cache_source_filenames = [validation_filename]
+    else:
+        if not screening_subsets:
+            raise ValueError("The disjoint-balanced design requires a screening subset")
+        screening_union = {
+            instance_id
+            for screening_ids in screening_subsets.values()
+            for instance_id in screening_ids
+        }
+        confirmation_pool = [
+            instance_id
+            for instance_id in eligible_validation_ids
+            if instance_id not in screening_union
+            and instance_id not in confirmation_excluded_id_set
+        ]
+        selected_validation_ids = repository_balanced_subset(
+            confirmation_pool,
+            size=validation_subset_size,
+            seed=seed,
+            namespace="validation-confirmatory-balanced-v1",
+        )
+        if screening_union & set(selected_validation_ids):
+            raise ValueError("Screening and confirmatory validation memberships overlap")
+        validation_filename = (
+            CONFIRMATORY_VALIDATION_SUBSET_FILENAME
+            if validation_subset_size == DEFAULT_VALIDATION_SUBSET_SIZE
+            else (
+                "swesmith_validation_confirmatory_balanced_"
+                f"{validation_subset_size}_instance_ids.txt"
+            )
+        )
+        largest_screening_ids = screening_subsets[max(screening_subsets)]
+        cache_ids = trajectory_ids + largest_screening_ids + selected_validation_ids
+        cache_source_filenames = [
+            f"swesmith_validation_{max(screening_subsets)}_instance_ids.txt",
+            validation_filename,
+        ]
 
     output_root = ensure_dir(output_dir)
     trajectory_filename = (
@@ -232,15 +360,12 @@ def write_task_subsets(
         if trajectory_subset_size == DEFAULT_TRAJECTORY_SUBSET_SIZE
         else f"swesmith_train_{trajectory_subset_size}_instance_ids.txt"
     )
-    validation_filename = (
-        VALIDATION_SUBSET_FILENAME
-        if validation_subset_size == DEFAULT_VALIDATION_SUBSET_SIZE
-        else f"swesmith_validation_{validation_subset_size}_instance_ids.txt"
-    )
+    cache_source_filenames.insert(0, trajectory_filename)
     cache_filename = (
         CACHE_SUBSET_FILENAME
         if (
-            trajectory_subset_size == DEFAULT_TRAJECTORY_SUBSET_SIZE
+            validation_design == DEFAULT_VALIDATION_DESIGN
+            and trajectory_subset_size == DEFAULT_TRAJECTORY_SUBSET_SIZE
             and validation_subset_size == DEFAULT_VALIDATION_SUBSET_SIZE
         )
         else f"swesmith_cache_{len(cache_ids)}_instance_ids.txt"
@@ -277,10 +402,22 @@ def write_task_subsets(
         }
 
     return {
-        "strategy": "repository_covering_proportional_hash_sample",
-        "strategy_version": 1,
+        "strategy": (
+            "repository_covering_proportional_hash_sample"
+            if validation_design == DEFAULT_VALIDATION_DESIGN
+            else "proportional_screening_disjoint_repository_balanced_confirmation"
+        ),
+        "strategy_version": 2 if validation_design != DEFAULT_VALIDATION_DESIGN else 1,
+        "validation_design": validation_design,
         "group_field": "instance_id_without_final_dot_component",
-        "allocation": ("one_per_repository_then_greatest_proportional_deficit"),
+        "allocation": (
+            "one_per_repository_then_greatest_proportional_deficit"
+            if validation_design == DEFAULT_VALIDATION_DESIGN
+            else {
+                "screening": "one_per_repository_then_greatest_proportional_deficit",
+                "confirmation": "equal_repository_waterfill",
+            }
+        ),
         "selection": "sha256_hash_rank_without_replacement",
         "ordering": "sha256_hash_order",
         "seed": seed,
@@ -289,6 +426,15 @@ def write_task_subsets(
             "matched_repositories": matched_excluded_repositories,
             "n_excluded_tasks": len(validation_ids) - len(eligible_validation_ids),
             "n_eligible_tasks": len(eligible_validation_ids),
+        },
+        "confirmation_exclusions": {
+            "sources": list(confirmation_exclusion_sources),
+            "n_tasks": len(confirmation_excluded_ids),
+            "sha256": (
+                _ordered_ids_sha256(list(confirmation_excluded_ids))
+                if confirmation_excluded_ids
+                else None
+            ),
         },
         "trajectory": {
             "source": "train_instance_ids.txt",
@@ -300,16 +446,18 @@ def write_task_subsets(
         "validation": {
             "source": "validation_instance_ids.txt",
             "file": str(validation_path),
+            "role": (
+                "validation"
+                if validation_design == DEFAULT_VALIDATION_DESIGN
+                else "confirmatory_validation"
+            ),
             "n_tasks": len(selected_validation_ids),
             "n_repositories": len({_repository_snapshot(item) for item in selected_validation_ids}),
             "sha256": _ordered_ids_sha256(selected_validation_ids),
         },
         "validation_screening": screening_metadata,
         "cache": {
-            "sources": [
-                trajectory_filename,
-                validation_filename,
-            ],
+            "sources": cache_source_filenames,
             "file": str(cache_path),
             "n_tasks": len(cache_ids),
             "n_repositories": len({_repository_snapshot(item) for item in cache_ids}),
@@ -414,6 +562,19 @@ def prepare_swesmith_splits(args: argparse.Namespace) -> dict[str, Any]:
         excluded_validation_repositories=tuple(
             getattr(args, "exclude_repository", ())
         ),
+        validation_design=getattr(
+            args,
+            "validation_design",
+            DEFAULT_VALIDATION_DESIGN,
+        ),
+        confirmation_excluded_ids=tuple(
+            instance_id
+            for path in getattr(args, "confirmation_exclude_instance_ids_file", ())
+            for instance_id in read_instance_ids_file(path)
+        ),
+        confirmation_exclusion_sources=tuple(
+            getattr(args, "confirmation_exclude_instance_ids_file", ())
+        ),
         seed=args.seed,
     )
 
@@ -480,6 +641,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_VALIDATION_SUBSET_SIZE,
     )
     parser.add_argument(
+        "--validation-design",
+        choices=VALIDATION_DESIGNS,
+        default=DEFAULT_VALIDATION_DESIGN,
+        help=(
+            "Use the legacy nested proportional validation budgets or a "
+            "task-proportional screening set with a disjoint, repository-balanced "
+            "confirmatory set."
+        ),
+    )
+    parser.add_argument(
         "--subsets-only",
         action="store_true",
         help=(
@@ -507,11 +678,30 @@ def build_parser() -> argparse.ArgumentParser:
             "'swesmith/' prefix is ignored."
         ),
     )
+    parser.add_argument(
+        "--confirmation-exclude-instance-ids-file",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help=(
+            "Exclude task IDs from a disjoint confirmatory sample, including "
+            "previously evaluated memberships and technically unavailable tasks. "
+            "Repeat for multiple files."
+        ),
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    confirmation_exclusion_sources = tuple(
+        args.confirmation_exclude_instance_ids_file
+    )
+    confirmation_excluded_ids = tuple(
+        instance_id
+        for path in confirmation_exclusion_sources
+        for instance_id in read_instance_ids_file(path)
+    )
     if args.subsets_only:
         manifest = write_task_subsets(
             train_ids=read_instance_ids_file(args.train_instance_ids_file),
@@ -520,6 +710,9 @@ def main(argv: list[str] | None = None) -> int:
             trajectory_subset_size=args.trajectory_subset_size,
             validation_subset_size=args.validation_subset_size,
             excluded_validation_repositories=tuple(args.exclude_repository),
+            validation_design=args.validation_design,
+            confirmation_excluded_ids=confirmation_excluded_ids,
+            confirmation_exclusion_sources=confirmation_exclusion_sources,
             seed=args.seed,
         )
         manifest_path = Path(args.output_dir) / "swesmith_py_split_manifest.json"

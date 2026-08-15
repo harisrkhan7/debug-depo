@@ -10,28 +10,40 @@
   "n_validation": 5099,
   "n_validation_repositories": 14,
   "requested_validation_fraction": 0.1,
-  "schema_version": 4,
+  "schema_version": 5,
   "seed": 42,
   "source_split": "train",
   "strategy": "repository_disjoint_hash_ranked_greedy",
   "task_subsets": {
-    "allocation": "one_per_repository_then_greatest_proportional_deficit",
+    "allocation": {
+      "confirmation": "equal_repository_waterfill",
+      "screening": "one_per_repository_then_greatest_proportional_deficit"
+    },
     "cache": {
-      "file": "data/splits/swesmith_cache_5500_instance_ids.txt",
+      "file": "data/splits/swesmith_cache_5700_instance_ids.txt",
       "n_repositories": 130,
-      "n_tasks": 5500,
-      "sha256": "5c285fbe49f918608fd4483436bcad8feebecf4e5076bb2cedc499d51a7d5a09",
+      "n_tasks": 5700,
+      "sha256": "b46ba34956a3d0abedf1e5d5472233670cb1bfcd1d90745ea002124e4b91c526",
       "sources": [
         "swesmith_train_5000_instance_ids.txt",
-        "swesmith_validation_500_instance_ids.txt"
+        "swesmith_validation_200_instance_ids.txt",
+        "swesmith_validation_confirmatory_balanced_500_instance_ids.txt"
+      ]
+    },
+    "confirmation_exclusions": {
+      "n_tasks": 503,
+      "sha256": "2903f328e55f9e1b808b72220c3b6b0eefa2896f70cffd16db14a56b2ecdc07f",
+      "sources": [
+        "data/splits/swesmith_validation_500_instance_ids.txt",
+        "data/splits/swesmith_validation_unavailable_instance_ids.txt"
       ]
     },
     "group_field": "instance_id_without_final_dot_component",
     "ordering": "sha256_hash_order",
     "seed": 42,
     "selection": "sha256_hash_rank_without_replacement",
-    "strategy": "repository_covering_proportional_hash_sample",
-    "strategy_version": 1,
+    "strategy": "proportional_screening_disjoint_repository_balanced_confirmation",
+    "strategy_version": 2,
     "trajectory": {
       "file": "data/splits/swesmith_train_5000_instance_ids.txt",
       "n_repositories": 117,
@@ -40,12 +52,14 @@
       "source": "train_instance_ids.txt"
     },
     "validation": {
-      "file": "data/splits/swesmith_validation_500_instance_ids.txt",
+      "file": "data/splits/swesmith_validation_confirmatory_balanced_500_instance_ids.txt",
       "n_repositories": 13,
       "n_tasks": 500,
-      "sha256": "eab0797ef90dba25ce702ff07aeb0789f37e92739073712759beb9bcea451bd2",
+      "role": "confirmatory_validation",
+      "sha256": "0a4dbb16a6bf309573db1a809d53302d398d9e3b9d5d2ddd942c7bc811e7928a",
       "source": "validation_instance_ids.txt"
     },
+    "validation_design": "disjoint-balanced",
     "validation_exclusions": {
       "matched_repositories": [
         "stanfordnlp__string2string.c4a72f59"

@@ -30,7 +30,8 @@ repository-disjoint memberships are tracked as:
 
 - `data/splits/train_instance_ids.txt`: 45,809 tasks;
 - `data/splits/validation_instance_ids.txt`: 5,099 tasks;
-- derived samples: 5,000 training and 500 validation tasks.
+- derived samples: 5,000 training, 200 screening, and 500 disjoint
+  confirmatory-validation tasks.
 
 The pinned revision, policy, repository membership, and hashes are in
 `data/splits/swesmith_py_split_manifest.json`; see the
@@ -38,15 +39,36 @@ The pinned revision, policy, repository membership, and hashes are in
 only the derived samples with:
 
 ```bash
-uv run debug-depo-prepare-swesmith-splits --subsets-only
+uv run debug-depo-prepare-swesmith-splits \
+  --subsets-only \
+  --validation-design disjoint-balanced \
+  --confirmation-exclude-instance-ids-file \
+    data/splits/swesmith_validation_500_instance_ids.txt \
+  --confirmation-exclude-instance-ids-file \
+    data/splits/swesmith_validation_unavailable_instance_ids.txt \
+  --exclude-repository stanfordnlp__string2string.c4a72f59
 ```
+
+After building the repository SIF cache, preflight the selected task refs
+against those images:
+
+```bash
+source cloud/env.sh
+PYTHONPATH=src .venv/bin/python scripts/preflight_swesmith_branches.py \
+  --missing-output /tmp/swesmith-missing-branches.txt
+```
+
+The tracked set is expected to report zero unavailable refs. The technical
+exclusion membership is stored in
+`data/splits/swesmith_validation_unavailable_instance_ids.txt` and is supplied
+to the deterministic sampler during regeneration.
 
 Submit the validation sample without changing the upstream split name:
 
 ```bash
 RUN_NAME=swesmith-validation-500 \
 SPLIT=train \
-TASK_IDS_FILE=data/splits/swesmith_validation_500_instance_ids.txt \
+TASK_IDS_FILE=data/splits/swesmith_validation_confirmatory_balanced_500_instance_ids.txt \
 EXPECTED_TASKS=500 \
 NUM_SHARDS=100 \
 DRY_RUN=1 \

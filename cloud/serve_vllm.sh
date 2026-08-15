@@ -6,6 +6,7 @@ CLOUD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$CLOUD_DIR/common.sh"
 
 require_command apptainer
+require_command setsid
 require_separate_storage
 
 GPU_ID="${GPU_ID:?Set GPU_ID to one physical GPU index.}"
@@ -65,7 +66,7 @@ if [[ "${VLLM_LOG_REQUESTS:-1}" == "1" ]]; then
   vllm_diagnostic_args+=(--enable-log-requests --max-log-len "${VLLM_MAX_LOG_LEN:-2048}")
 fi
 
-apptainer exec --nv \
+setsid apptainer exec --nv \
   "${bind_args[@]}" \
   --pwd "$DEBUG_DEPO_ROOT" \
   "$VLLM_IMAGE" \
@@ -81,8 +82,8 @@ apptainer exec --nv \
 vllm_pid=$!
 
 cleanup() {
-  kill "$vllm_pid" 2>/dev/null || true
-  wait "$vllm_pid" 2>/dev/null || true
+  trap - EXIT HUP INT TERM
+  terminate_process_group "$vllm_pid"
 }
 trap cleanup EXIT HUP INT TERM
 wait "$vllm_pid"

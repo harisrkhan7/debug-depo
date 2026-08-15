@@ -27,8 +27,8 @@ from debug_depo.agentforge import (
 )
 from debug_depo.constants import (
     DEFAULT_AGENTFORGE_MODEL,
-    DEFAULT_CONTEXT_LENGTH,
     DEFAULT_MAX_STEPS,
+    DEFAULT_SWESMITH_CONTEXT_LENGTH,
     DEFAULT_SWESMITH_DATASET,
     DEFAULT_SWESMITH_DATASET_REVISION,
     DEFAULT_SWESMITH_SPLIT,
@@ -758,7 +758,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--context-length",
         type=int,
-        default=int(os.getenv("CONTEXT_LENGTH", DEFAULT_CONTEXT_LENGTH)),
+        default=int(os.getenv("CONTEXT_LENGTH", DEFAULT_SWESMITH_CONTEXT_LENGTH)),
     )
     parser.add_argument("--top-p", type=float, default=float(os.getenv("TOP_P", DEFAULT_TOP_P)))
     parser.add_argument(
@@ -789,6 +789,8 @@ def main(argv: list[str] | None = None) -> int:
     previous_handlers = {signum: signal.getsignal(signum) for signum in handled_signals}
 
     def handle_termination(signum: int, _frame: object) -> None:
+        for handled_signal in handled_signals:
+            signal.signal(handled_signal, signal.SIG_IGN)
         signal_name = signal.Signals(signum).name
         try:
             print(

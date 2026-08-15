@@ -39,7 +39,7 @@ fi
 # compression phases can create excessive runnable threads and reduce total
 # throughput through CPU scheduling and shared-storage contention.
 
-SWESMITH_TASK_IDS_FILE="${SWESMITH_TASK_IDS_FILE:-data/splits/swesmith_cache_5500_instance_ids.txt}"
+SWESMITH_TASK_IDS_FILE="${SWESMITH_TASK_IDS_FILE:-data/splits/swesmith_cache_5700_instance_ids.txt}"
 summary_dir="${CACHE_BUILD_SUMMARY_ROOT:-$DEBUG_DEPO_SCRATCH/cache-builds}"
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 export CACHE_BUILD_MODE="$MODE"

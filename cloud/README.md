@@ -13,6 +13,7 @@ Key defaults from `cloud/env.sh` are:
 | Trajectory workers | 8 per shard |
 | Cache-build workers | 50 (maximum 100) |
 | Evaluation workers | 100 |
+| Threads per evaluation task | 1 |
 | Training processes | One per detected GPU |
 
 Run `bash cloud/run.sh help` for the complete command list. The baseline SFT
@@ -230,12 +231,13 @@ Put stable machine settings in ignored `cloud/local.env` and one-off experiment
 settings on the command line. Common overrides are:
 
 - `GPU_IDS`, with matching `NUM_SHARDS` and `NUM_PROCESSES` for a GPU subset.
-- `ROLLOUT_WORKERS`, `EVAL_MAX_WORKERS`, `MAX_STEPS`, and `CONTEXT_LENGTH`.
+- `ROLLOUT_WORKERS`, `EVAL_MAX_WORKERS`, `EVAL_THREADS_PER_TASK`, `MAX_STEPS`,
+  and `CONTEXT_LENGTH`.
 - `RUN_NAME`, `TASK_IDS_FILE`, `EXPECTED_TASKS`, and `AGENTFORGE_MODEL`.
 - `CLOUD_SHARD_MAX_ATTEMPTS` (default `3`) and
-  `CLOUD_SHARD_STALL_TIMEOUT_SECONDS` (default `900`; `0` disables it).
-- `MINI_SWE_MODEL_TIMEOUT_SECONDS`, which must be lower than a nonzero shard
-  stall timeout.
+  `CLOUD_SHARD_STALL_TIMEOUT_SECONDS` (default `1500`; `0` disables it).
+- `MINI_SWE_MODEL_TIMEOUT_SECONDS` (default `1200`), which must be lower than a
+  nonzero shard stall timeout.
 - `VLLM_APPTAINER_SOURCE`, `VLLM_GPU_MEMORY_UTILIZATION`, and
   `APPTAINER_MKSQUASHFS_ARGS`.
 

@@ -8,3 +8,4 @@ export REMOTE="${REMOTE:-debug-depo-cluster}"
 # from $RDS automatically.
 # export DEBUG_DEPO_SCRATCH="$RDS/ephemeral/debug-depo"
 # export VLLM_IMAGE="$HOME/debug-depo/cluster/apptainer/vllm-openai.sif"
+# export VLLM_APPTAINER_SOURCE="docker://vllm/vllm-openai:v0.11.0"

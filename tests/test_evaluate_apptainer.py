@@ -13,6 +13,7 @@ from debug_depo.evaluate_apptainer import (
     image_uri_from_template,
     run_apptainer_evaluation,
     run_instance,
+    write_runner_script,
 )
 from debug_depo.utils import write_json
 
@@ -44,6 +45,42 @@ def test_apptainer_exec_command_binds_log_dir(tmp_path):
         "/bin/bash",
         f"{EVAL_BIND_DIR}/run_apptainer_eval.sh",
     ]
+
+
+def test_runner_script_limits_library_threads_inside_container(tmp_path):
+    runner = write_runner_script(tmp_path, threads_per_task=2)
+    script = runner.read_text(encoding="utf-8")
+
+    for variable in (
+        "OMP_NUM_THREADS",
+        "MKL_NUM_THREADS",
+        "OPENBLAS_NUM_THREADS",
+        "BLIS_NUM_THREADS",
+        "NUMEXPR_NUM_THREADS",
+    ):
+        assert f'export {variable}="2"' in script
+    assert script.index('export OMP_NUM_THREADS="2"') < script.index(
+        'bash "/swebench_eval/eval.sh"'
+    )
+
+
+def test_runner_script_rejects_non_positive_thread_limit(tmp_path):
+    with pytest.raises(ValueError, match="positive integer"):
+        write_runner_script(tmp_path, threads_per_task=0)
+
+
+def test_parser_rejects_non_positive_thread_limit():
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(
+            [
+                "--predictions-path",
+                "predictions.jsonl",
+                "--model",
+                "model",
+                "--threads-per-task",
+                "0",
+            ]
+        )
 
 
 def test_cached_report_is_keyed_by_prediction_and_instance_content(

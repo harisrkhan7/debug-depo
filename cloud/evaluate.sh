@@ -30,6 +30,7 @@ require_run_name "$RUN_NAME"
 require_positive_integer NUM_SHARDS "$NUM_SHARDS"
 require_positive_integer EXPECTED_TASKS "$EXPECTED_TASKS"
 require_positive_integer EVAL_MAX_WORKERS "$EVAL_MAX_WORKERS"
+require_positive_integer EVAL_THREADS_PER_TASK "$EVAL_THREADS_PER_TASK"
 if [[ "${SWESMITH_EVAL_RUNTIME:-apptainer}" != "apptainer" ]]; then
   echo "Cloud requires SWESMITH_EVAL_RUNTIME=apptainer." >&2
   exit 2
@@ -47,6 +48,7 @@ Cloud $FAMILY evaluation
   expected tasks:  $EXPECTED_TASKS
   expected shards: $NUM_SHARDS
   workers:         $EVAL_MAX_WORKERS
+  threads/task:    $EVAL_THREADS_PER_TASK
   runtime:         Apptainer
   task IDs:        ${EVALUATION_TASK_IDS_FILE:-merged predictions}
 MSG

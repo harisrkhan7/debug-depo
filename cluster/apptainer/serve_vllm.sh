@@ -56,6 +56,11 @@ if [[ -z "${HF_TOKEN:-}" && -f "$HF_TOKEN_FILE" ]]; then
   HF_TOKEN="$(<"$HF_TOKEN_FILE")"
   export HF_TOKEN
 fi
+
+diagnostic_args=()
+if [[ "${VLLM_LOG_REQUESTS:-1}" == "1" ]]; then
+  diagnostic_args+=(--enable-log-requests --max-log-len "${VLLM_MAX_LOG_LEN:-2048}")
+fi
 if [[ -z "${HF_TOKEN:-}" && -n "${HUGGING_FACE_HUB_TOKEN:-}" ]]; then
   export HF_TOKEN="$HUGGING_FACE_HUB_TOKEN"
 fi
@@ -73,7 +78,7 @@ if [[ "$VLLM_IMAGE" != docker://* && "$VLLM_IMAGE" != oras://* && ! -f "$VLLM_IM
   cat >&2 <<MSG
 Missing VLLM_IMAGE: $VLLM_IMAGE
 Build it first, for example:
-  apptainer pull "$VLLM_IMAGE" docker://vllm/vllm-openai:latest
+  apptainer pull "$VLLM_IMAGE" "$VLLM_APPTAINER_SOURCE"
 MSG
   exit 1
 fi
@@ -91,6 +96,7 @@ fi
 
 export APPTAINERENV_HF_HOME="$HF_HOME"
 export APPTAINERENV_HF_HUB_DISABLE_XET="$HF_HUB_DISABLE_XET"
+export APPTAINERENV_RUST_BACKTRACE="$RUST_BACKTRACE"
 if [[ -n "${HF_TOKEN:-}" ]]; then
   export APPTAINERENV_HF_TOKEN="$HF_TOKEN"
 fi
@@ -110,6 +116,7 @@ apptainer exec --nv \
     "${tokenizer_args[@]}" \
     --max-model-len "$MAX_MODEL_LEN" \
     --gpu-memory-utilization "$VLLM_GPU_MEMORY_UTILIZATION" \
+    "${diagnostic_args[@]}" \
     "${VLLM_EXTRA_ARGS_ARRAY[@]}" \
     "$@" &
 server_pid=$!

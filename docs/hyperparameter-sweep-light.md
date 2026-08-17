@@ -183,3 +183,104 @@ search:
 - one locally balanced total-cost setting;
 - one 200-task screening round;
 - two preference-trained models on the final 500-task validation.
+
+## Remaining-budget follow-up after confirmatory validation
+
+The confirmatory 500-task evaluation did not show an aggregate improvement over
+SFT: SFT resolved 70 tasks, DMPO resolved 61, and DMPO-to-DEPO resolved 58.
+The only promising exploratory signal was lower mean and upper-tail token cost
+on the small subset of tasks solved by both models. The following three trials
+are therefore ordered to prioritize preserving SFT capability while testing
+the cheapest plausible explanations for the regression.
+
+This section supersedes the fixed accumulation, epoch, and learning-rate values
+above only for these follow-up trials. The existing 500-task result has now been
+inspected and must not be treated as untouched confirmation data for the new
+trials.
+
+### Follow-up order
+
+Run the trials in this order:
+
+| Priority | Trial | Initialization and data | Settings | Purpose |
+| ---: | --- | --- | --- | --- |
+| 1 | `g07-lr5e7-ga16-e2` | SFT; reuse the existing DMPO pairs | `gamma=0.7`, `beta=0.1`, LR `5e-7`, accumulation `16`, 2 epochs, length `8192` | Apply a gentler update while retaining about 40 optimizer steps instead of the original 30 |
+| 2 | `g07-lr5e7-ga16-e2-min125` | SFT; rebuild DMPO pairs into a separately named artifact with `MIN_COST_RATIO=1.25` | Same trainer settings as trial 1 | Remove weak 10--25% cost-gap preferences and test whether cleaner efficiency supervision preserves success |
+| 3 | `direct-total-balanced-lr1e5-ga16-e2` | Direct SFT-to-DEPO; reuse the existing DEPO trajectories | `beta=0.2`, `DEPO_TOKEN_METRIC=total_tokens`, `alpha_tokens=600`, `alpha_steps=2`, LR `1e-5`, accumulation `16`, 2 epochs, length `8192` | Test whether DEPO can retain capability when it is not stacked on an already degraded DMPO model |
+
+Do not add gamma, beta, LoRA-rank, longer-context, or 5,000-task trials until
+these three have been screened. The full-data calibration gives a balanced
+total-token coefficient of approximately 622, so changing 600 to 622 is not a
+useful use of the remaining budget.
+
+### Budget-saving screening and stopping rule
+
+Evaluate each new model on the 100-task development split first. Reject a trial
+if it resolves more than three fewer tasks than SFT. Among eligible trials,
+rank by `total_tokens_per_resolved_task`, then inspect paired total-token changes
+on tasks solved by both the candidate and SFT.
+
+If trial 1 is success-noninferior and clearly improves cost per resolution, it
+is acceptable to stop the search and promote it directly to the 200-task split.
+Otherwise screen trials 2 and 3 on 100 tasks and promote only the best eligible
+candidate to 200. Do not run all three on 200 tasks by default.
+
+Use:
+
+```text
+data/splits/swesmith_validation_100_instance_ids.txt
+```
+
+for the first screen and:
+
+```text
+data/splits/swesmith_validation_200_instance_ids.txt
+```
+
+for the single promoted run. If a new confirmatory claim is required later,
+draw a fresh repository-balanced membership from the remaining held-out tasks
+rather than selecting again on the existing confirmatory 500.
+
+### Trial 1 command
+
+```bash
+RUN_NAME=swesmith-train-1000-r2 \
+EXPERIMENT_ARM=dmpo \
+DMPO_TRIAL_NAME=g07-lr5e7-ga16-e2 \
+DMPO_GAMMA=0.7 \
+DMPO_LEARNING_RATE=5e-7 \
+DMPO_BETA=0.1 \
+MAX_LENGTH=8192 \
+PER_DEVICE_BATCH_SIZE=1 \
+GRADIENT_ACCUMULATION_STEPS=16 \
+EPOCHS=2 \
+  bash cloud/run.sh dmpo
+```
+
+### Trial 2 data and training settings
+
+Build the `MIN_COST_RATIO=1.25` pairs into a new directory and retain their own
+summary and hash; do not overwrite `preference-data/dmpo`. Point
+`DMPO_DATA_PATH` at the new `pairs.jsonl`, then train with the same settings as
+trial 1 and the unique trial name `g07-lr5e7-ga16-e2-min125`.
+
+Do not set `INCLUDE_FAILURE_EFFICIENCY_PAIRS=1` for this run. Unfiltered
+failure-efficiency pairs can reward premature termination.
+
+### Trial 3 command
+
+```bash
+RUN_NAME=swesmith-train-1000-r2 \
+EXPERIMENT_ARM=depo \
+DEPO_TRIAL_NAME=direct-total-balanced-lr1e5-ga16-e2 \
+DEPO_TOKEN_METRIC=total_tokens \
+ALPHA_TOKENS=600 \
+ALPHA_STEPS=2 \
+DEPO_LEARNING_RATE=1e-5 \
+DEPO_BETA=0.2 \
+MAX_LENGTH=8192 \
+PER_DEVICE_BATCH_SIZE=1 \
+GRADIENT_ACCUMULATION_STEPS=16 \
+EPOCHS=2 \
+  bash cloud/run.sh depo
+```

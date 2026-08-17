@@ -269,6 +269,29 @@ def test_cluster_resource_profiles_keep_small_and_full_jobs_distinct() -> None:
         assert expected in contents
 
 
+def test_cluster_runtime_defaults_match_the_maintained_workflow(tmp_path: Path) -> None:
+    completed, calls = run_submission(
+        tmp_path,
+        "cluster/submit_apptainer_cache_full.sh",
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert len(calls) == 1
+    assert (
+        "SWESMITH_TASK_IDS_FILE=data/splits/swesmith_cache_5700_instance_ids.txt"
+        in joined(calls[0])
+    )
+
+    defaults = (ROOT / "cluster" / "env" / "defaults.sh").read_text(encoding="utf-8")
+    assert "docker://vllm/vllm-openai:v0.11.0" in defaults
+    assert 'STREAM_OUTPUT="${STREAM_OUTPUT:-1}"' in defaults
+
+    evaluation = (ROOT / "cluster" / "run_swesmith_evaluation_job.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "DEFAULT_EXPECTED_SHARDS=50" in evaluation
+
+
 def test_external_dependencies_are_pinned() -> None:
     installers = {
         "scripts/install_mini_swe_agent_plus.sh": "3dfa5e26831306978ff3cfa2da15b49113ded0e6",

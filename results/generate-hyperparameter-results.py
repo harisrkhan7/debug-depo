@@ -1,4 +1,8 @@
-"""Reproduce the figures and uncertainty summaries used in the sweep report.
+"""
+Most of this script was generated using ChatGPT 5.6 Sol Model
+to enhance the quality of the output.
+
+Reproduce the figures and uncertainty summaries used in the sweep report.
 
 Run from the repository root with:
 

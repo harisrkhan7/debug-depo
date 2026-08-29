@@ -39,6 +39,41 @@ Cost defaults to accumulated `total_tokens`; `completion_tokens` can be selected
 instead. Each retained row contains the common prompt, a `chosen` trajectory, and
 a `rejected` trajectory.
 
+#### Completed 1,000-task training dataset
+
+The `swesmith-train-1000-r2` collection has four evaluated trajectories per
+task. Pair construction therefore considers six unordered candidates per task,
+or `1,000 * C(4, 2) = 6,000` candidates before filtering. The observed
+breakdown is:
+
+| Candidate type | Candidates | Retained DMPO pairs |
+| --- | ---: | ---: |
+| Resolved vs unresolved | 1,107 | 1,107 |
+| Resolved vs resolved | 1,620 | 1,362 |
+| Unresolved vs unresolved | 3,273 | 0 |
+| **Total** | **6,000** | **2,469** |
+
+All resolved-versus-unresolved candidates are retained and oriented with the
+resolved trajectory as `chosen`. Of the resolved-versus-resolved candidates,
+258 are removed because they do not meet the cost-ratio rule. All
+unresolved-versus-unresolved candidates are disabled by default.
+
+For example, 114 tasks contain exactly two resolved and two unresolved
+trajectories. Each has six candidates: four resolved-versus-unresolved pairs,
+one resolved-versus-resolved candidate, and one unresolved-versus-unresolved
+candidate. Those tasks therefore contribute `114 * 4 = 456` guaranteed
+task-success pairs, plus any resolved-efficiency pair that meets the cost-ratio
+threshold.
+
+The immutable DMPO `pairs.jsonl` contains only the 2,469 retained rows, with
+`preference_reason` identifying the two retained categories. Its `summary.json`
+records the retained counts (`task_success: 1,107` and
+`resolved_token_efficiency: 1,362`), 4,000 evaluated trajectories, and 1,449
+resolved trajectories. It does not explicitly store the 6,000 candidate count
+or the discarded-category counts above. Those are derived by grouping the full
+labelled trajectory matrix by task and outcome; the corresponding DEPO
+`trajectories.jsonl` retains all 4,000 trajectory labels.
+
 ### DEPO: labels, not pairs
 
 DEPO reuses the selected rollouts individually:

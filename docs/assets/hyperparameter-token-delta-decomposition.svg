@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 740" role="img" aria-labelledby="title desc">
+<title id="title">Drivers of the DEPO token difference</title>
+<desc id="desc">Aggregate paired token changes by resolution transition and the token share of no-patch attempts in both evaluations.</desc>
+<rect width="100%" height="100%" fill="white"/>
+<text x="80" y="34" fill="#172033" font-family="Arial, sans-serif" font-size="22" font-weight="700">What drives DEPO&#x27;s token difference?</text>
+<text x="80" y="59" fill="#536176" font-family="Arial, sans-serif" font-size="13">All changes are DEPO minus SFT; green is a saving and orange is additional spend.</text>
+<text x="80" y="92" fill="#172033" font-family="Arial, sans-serif" font-size="17" font-weight="700">A. Aggregate total-token change by paired outcome</text>
+<line x1="80" y1="308.0" x2="1020" y2="308.0" stroke="#dbe3ec" stroke-width="1"/>
+<text x="70" y="312.0" fill="#172033" font-family="Arial, sans-serif" font-size="11" text-anchor="end">-20M</text>
+<line x1="80" y1="264.0" x2="1020" y2="264.0" stroke="#dbe3ec" stroke-width="1"/>
+<text x="70" y="268.0" fill="#172033" font-family="Arial, sans-serif" font-size="11" text-anchor="end">-10M</text>
+<line x1="80" y1="220.0" x2="1020" y2="220.0" stroke="#172033" stroke-width="1.5"/>
+<text x="70" y="224.0" fill="#172033" font-family="Arial, sans-serif" font-size="11" text-anchor="end">+0M</text>
+<line x1="80" y1="176.0" x2="1020" y2="176.0" stroke="#dbe3ec" stroke-width="1"/>
+<text x="70" y="180.0" fill="#172033" font-family="Arial, sans-serif" font-size="11" text-anchor="end">+10M</text>
+<line x1="80" y1="132.0" x2="1020" y2="132.0" stroke="#dbe3ec" stroke-width="1"/>
+<text x="70" y="136.0" fill="#172033" font-family="Arial, sans-serif" font-size="11" text-anchor="end">+20M</text>
+<rect x="121" y="220.0" width="58" height="5.9" rx="3" fill="#059669"/>
+<text x="150" y="243.9411792" fill="#059669" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" font-weight="700">-1.35M</text>
+<text x="150" y="352" fill="#172033" font-family="Arial, sans-serif" font-size="11" text-anchor="middle">Both solved</text>
+<rect x="221" y="220.0" width="58" height="5.0" rx="3" fill="#059669"/>
+<text x="250" y="242.99205519999998" fill="#059669" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" font-weight="700">-1.13M</text>
+<text x="250" y="352" fill="#172033" font-family="Arial, sans-serif" font-size="11" text-anchor="middle">DEPO-only</text>
+<rect x="321" y="187.4" width="58" height="32.6" rx="3" fill="#c25b22"/>
+<text x="350" y="179.36541119999998" fill="#c25b22" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" font-weight="700">+7.42M</text>
+<text x="350" y="352" fill="#172033" font-family="Arial, sans-serif" font-size="11" text-anchor="middle">SFT-only</text>
+<rect x="421" y="115.1" width="58" height="104.9" rx="3" fill="#c25b22"/>
+<text x="450" y="107.051794" fill="#c25b22" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" font-weight="700">+23.85M</text>
+<text x="450" y="352" fill="#172033" font-family="Arial, sans-serif" font-size="11" text-anchor="middle">Neither</text>
+<rect x="621" y="220.0" width="58" height="59.8" rx="3" fill="#059669"/>
+<text x="650" y="297.7600872" fill="#059669" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" font-weight="700">-13.58M</text>
+<text x="650" y="352" fill="#172033" font-family="Arial, sans-serif" font-size="11" text-anchor="middle">Both solved</text>
+<rect x="721" y="220.0" width="58" height="80.2" rx="3" fill="#059669"/>
+<text x="750" y="318.238818" fill="#059669" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" font-weight="700">-18.24M</text>
+<text x="750" y="352" fill="#172033" font-family="Arial, sans-serif" font-size="11" text-anchor="middle">DEPO-only</text>
+<rect x="821" y="137.3" width="58" height="82.7" rx="3" fill="#c25b22"/>
+<text x="850" y="129.29861640000001" fill="#c25b22" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" font-weight="700">+18.80M</text>
+<text x="850" y="352" fill="#172033" font-family="Arial, sans-serif" font-size="11" text-anchor="middle">SFT-only</text>
+<rect x="921" y="220.0" width="58" height="32.5" rx="3" fill="#059669"/>
+<text x="950" y="270.5478736" fill="#059669" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" font-weight="700">-7.40M</text>
+<text x="950" y="352" fill="#172033" font-family="Arial, sans-serif" font-size="11" text-anchor="middle">Neither</text>
+<text x="300" y="382" fill="#172033" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" font-weight="700">SWE-smith confirmation</text>
+<text x="800" y="382" fill="#172033" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" font-weight="700">SWE-bench Verified</text>
+<text x="80" y="425" fill="#172033" font-family="Arial, sans-serif" font-size="17" font-weight="700">B. No-patch attempts consume a disproportionate token share</text>
+<text x="80" y="448" fill="#536176" font-family="Arial, sans-serif" font-size="13">Bars compare their share of tasks with their share of all DEPO tokens.</text>
+<line x1="80" y1="640.0" x2="1020" y2="640.0" stroke="#dbe3ec"/>
+<text x="70" y="644.0" fill="#172033" font-family="Arial, sans-serif" font-size="11" text-anchor="end">0%</text>
+<line x1="80" y1="607.0" x2="1020" y2="607.0" stroke="#dbe3ec"/>
+<text x="70" y="611.0" fill="#172033" font-family="Arial, sans-serif" font-size="11" text-anchor="end">5%</text>
+<line x1="80" y1="574.0" x2="1020" y2="574.0" stroke="#dbe3ec"/>
+<text x="70" y="578.0" fill="#172033" font-family="Arial, sans-serif" font-size="11" text-anchor="end">10%</text>
+<line x1="80" y1="541.0" x2="1020" y2="541.0" stroke="#dbe3ec"/>
+<text x="70" y="545.0" fill="#172033" font-family="Arial, sans-serif" font-size="11" text-anchor="end">15%</text>
+<line x1="80" y1="508.0" x2="1020" y2="508.0" stroke="#dbe3ec"/>
+<text x="70" y="512.0" fill="#172033" font-family="Arial, sans-serif" font-size="11" text-anchor="end">20%</text>
+<line x1="80" y1="475.0" x2="1020" y2="475.0" stroke="#dbe3ec"/>
+<text x="70" y="479.0" fill="#172033" font-family="Arial, sans-serif" font-size="11" text-anchor="end">25%</text>
+<rect x="214" y="616.2" width="62" height="23.8" rx="3" fill="#94a3b8"/>
+<text x="245" y="608.24" fill="#94a3b8" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" font-weight="700">3.6%</text>
+<text x="245" y="662" fill="#94a3b8" font-family="Arial, sans-serif" font-size="11" text-anchor="middle">Task share</text>
+<rect x="314" y="498.5" width="62" height="141.5" rx="3" fill="#c25b22"/>
+<text x="345" y="490.47782606479166" fill="#c25b22" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" font-weight="700">21.4%</text>
+<text x="345" y="662" fill="#c25b22" font-family="Arial, sans-serif" font-size="11" text-anchor="middle">Token share</text>
+<text x="295.0" y="696" fill="#172033" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" font-weight="700">SWE-smith confirmation</text>
+<text x="295.0" y="719" fill="#92400e" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">+41.60M vs SFT</text>
+<rect x="674" y="599.1" width="62" height="40.9" rx="3" fill="#94a3b8"/>
+<text x="705" y="591.08" fill="#94a3b8" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" font-weight="700">6.2%</text>
+<text x="705" y="662" fill="#94a3b8" font-family="Arial, sans-serif" font-size="11" text-anchor="middle">Task share</text>
+<rect x="774" y="490.9" width="62" height="149.1" rx="3" fill="#c25b22"/>
+<text x="805" y="482.86748652010976" fill="#c25b22" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" font-weight="700">22.6%</text>
+<text x="805" y="662" fill="#c25b22" font-family="Arial, sans-serif" font-size="11" text-anchor="middle">Token share</text>
+<text x="755.0" y="696" fill="#172033" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" font-weight="700">SWE-bench Verified</text>
+<text x="755.0" y="719" fill="#92400e" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">+39.70M vs SFT</text>
+</svg>

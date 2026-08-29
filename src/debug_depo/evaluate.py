@@ -14,12 +14,20 @@ from typing import Any
 from debug_depo.constants import (
     DEFAULT_AGENTFORGE_MODEL,
     DEFAULT_SWEBENCH_DATASET,
+    DEFAULT_SWEBENCH_DATASET_REVISION,
     DEFAULT_SWEBENCH_SPLIT,
     TARGET_VERIFIED_RESOLVED,
     TARGET_VERIFIED_SCORE,
     TARGET_VERIFIED_TOTAL,
 )
-from debug_depo.data import read_instance_ids_file
+from debug_depo.data import (
+    instance_ids,
+    load_swebench_tasks,
+    read_instance_ids_file,
+    resolve_swebench_dataset_revision,
+    select_tasks,
+    task_rows_sha256,
+)
 from debug_depo.utils import ensure_dir, load_hf_token_from_file, read_json, write_json
 
 
@@ -27,6 +35,7 @@ from debug_depo.utils import ensure_dir, load_hf_token_from_file, read_json, wri
 class EvaluationTarget:
     name: str
     dataset: str
+    dataset_revision: str
     split: str
     model: str
     score: float
@@ -38,6 +47,7 @@ EVALUATION_TARGETS = (
     EvaluationTarget(
         name="klear-agentforge-8b-sft-swe-bench-verified",
         dataset=DEFAULT_SWEBENCH_DATASET,
+        dataset_revision=DEFAULT_SWEBENCH_DATASET_REVISION,
         split=DEFAULT_SWEBENCH_SPLIT,
         model=DEFAULT_AGENTFORGE_MODEL,
         score=TARGET_VERIFIED_SCORE,
@@ -125,17 +135,24 @@ def load_report(report_dir: str | Path, model: str, run_id: str) -> dict[str, An
 def evaluation_target(
     *,
     dataset: str,
+    dataset_revision: str | None,
     split: str,
     model: str,
     total: int,
     submitted: int,
 ) -> EvaluationTarget | None:
-    """Return a paper target only when the complete evaluation setup matches."""
+    """Return a comparison target only when the complete setup matches."""
 
-    normalized = (dataset.casefold(), split.casefold(), model.casefold())
+    normalized = (
+        dataset.casefold(),
+        (dataset_revision or "").casefold(),
+        split.casefold(),
+        model.casefold(),
+    )
     for target in EVALUATION_TARGETS:
         target_key = (
             target.dataset.casefold(),
+            target.dataset_revision.casefold(),
             target.split.casefold(),
             target.model.casefold(),
         )
@@ -148,6 +165,7 @@ def summarize_report(
     report: dict[str, Any] | None,
     *,
     dataset: str = DEFAULT_SWEBENCH_DATASET,
+    dataset_revision: str | None = DEFAULT_SWEBENCH_DATASET_REVISION,
     split: str = DEFAULT_SWEBENCH_SPLIT,
     model: str = DEFAULT_AGENTFORGE_MODEL,
 ) -> dict[str, Any]:
@@ -155,6 +173,7 @@ def summarize_report(
         return {
             "status": "missing_report",
             "dataset": dataset,
+            "dataset_revision": dataset_revision,
             "split": split,
             "model": model,
             "resolved_instances": 0,
@@ -167,6 +186,7 @@ def summarize_report(
     denominator = submitted or total or 1
     target = evaluation_target(
         dataset=dataset,
+        dataset_revision=dataset_revision,
         split=split,
         model=model,
         total=total,
@@ -175,6 +195,7 @@ def summarize_report(
     summary = {
         "status": "ok",
         "dataset": dataset,
+        "dataset_revision": dataset_revision,
         "split": split,
         "model": model,
         "total_instances": total,
@@ -201,17 +222,61 @@ def collect_instance_ids(args: argparse.Namespace) -> list[str]:
     return ids
 
 
+def validate_evaluator_dataset_snapshot(args: argparse.Namespace) -> dict[str, Any]:
+    """Verify that the upstream evaluator's current rows match the requested pin."""
+
+    revision = resolve_swebench_dataset_revision(
+        args.dataset,
+        getattr(args, "dataset_revision", None),
+    )
+    pinned_tasks = select_tasks(
+        load_swebench_tasks(args.dataset, args.split, revision=revision),
+        instance_ids=args.instance_ids or None,
+    )
+    selected_ids = instance_ids(pinned_tasks)
+    pinned_hash = task_rows_sha256(pinned_tasks)
+
+    if revision is not None:
+        current_tasks = select_tasks(
+            load_swebench_tasks(args.dataset, args.split, revision=None),
+            instance_ids=selected_ids,
+        )
+        current_hash = task_rows_sha256(current_tasks)
+        if current_hash != pinned_hash:
+            raise RuntimeError(
+                "The official SWE-bench evaluator cannot be run safely because its "
+                "current dataset rows do not match the requested revision "
+                f"{revision}. Use the revision-aware Apptainer evaluator or update "
+                "the evaluator integration deliberately."
+            )
+
+    return {
+        "dataset_revision": revision,
+        "task_rows_sha256": pinned_hash,
+        "selected_task_count": len(pinned_tasks),
+    }
+
+
 def run_evaluation(args: argparse.Namespace) -> dict[str, Any]:
     load_hf_token_from_file()
     args.instance_ids = collect_instance_ids(args)
+    args.dataset_revision = resolve_swebench_dataset_revision(
+        args.dataset,
+        getattr(args, "dataset_revision", None),
+    )
     args.report_dir = str(path_from_cwd(args.report_dir))
     args.eval_cwd = str(path_from_cwd(args.eval_cwd))
     command = build_evaluation_command(args)
     if args.dry_run:
-        summary = {"dry_run": True, "command": command}
+        summary = {
+            "dry_run": True,
+            "command": command,
+            "dataset_revision": args.dataset_revision,
+        }
         print(json.dumps(summary, indent=2))
         return summary
 
+    snapshot = validate_evaluator_dataset_snapshot(args)
     completed = subprocess.run(command, cwd=args.eval_cwd, check=False)
     report_path = move_harness_report(args.report_dir, args.eval_cwd, args.model, args.run_id)
     report = load_report(args.report_dir, args.model, args.run_id)
@@ -219,9 +284,11 @@ def run_evaluation(args: argparse.Namespace) -> dict[str, Any]:
         "command": command,
         "returncode": completed.returncode,
         "report_path": str(report_path),
+        **snapshot,
         **summarize_report(
             report,
             dataset=args.dataset,
+            dataset_revision=args.dataset_revision,
             split=args.split,
             model=args.model,
         ),
@@ -244,6 +311,7 @@ def run_evaluation(args: argparse.Namespace) -> dict[str, Any]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the official SWE-bench evaluator.")
     parser.add_argument("--dataset", default=DEFAULT_SWEBENCH_DATASET)
+    parser.add_argument("--dataset-revision")
     parser.add_argument("--split", default=DEFAULT_SWEBENCH_SPLIT)
     parser.add_argument("--predictions-path", required=True)
     parser.add_argument("--model", required=True)

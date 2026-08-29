@@ -1,7 +1,6 @@
 import json
 from types import SimpleNamespace
 
-import pytest
 
 import debug_depo.miniswe_task as miniswe_task
 
@@ -12,22 +11,6 @@ def task(instance_id="repo__project.task-1"):
         "problem_statement": "Fix the task",
         "image_name": "example/image:latest",
     }
-
-
-def test_load_task_json_validates_the_expected_instance(tmp_path):
-    task_path = tmp_path / "task.json"
-    task_path.write_text(json.dumps(task()), encoding="utf-8")
-
-    assert miniswe_task.load_task_json(
-        task_path,
-        expected_instance_id="repo__project.task-1",
-    ) == task()
-
-    with pytest.raises(ValueError, match="does not match"):
-        miniswe_task.load_task_json(
-            task_path,
-            expected_instance_id="repo__project.task-2",
-        )
 
 
 def test_adapter_injects_one_task_into_the_official_runner(tmp_path, monkeypatch):

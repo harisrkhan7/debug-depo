@@ -10,6 +10,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
+from debug_depo.efficiency import summarize_efficiency
 from debug_depo.utils import read_json, read_jsonl, write_json
 
 
@@ -61,9 +62,7 @@ SCORED_EVALUATION_STATUSES = frozenset(
         "timeout",
     }
 )
-COMPLETED_COLLECTION_STATUSES = frozenset(
-    {"completed", "mocked", "model_terminated"}
-)
+COMPLETED_COLLECTION_STATUSES = frozenset({"completed", "mocked", "model_terminated"})
 
 
 def _safe_json(path: Path) -> dict[str, Any]:
@@ -152,10 +151,7 @@ def _evaluation_index(
             instance_id = str(report.get("instance_id") or report_path.parent.name)
             existing = outcomes.get(instance_id, {})
             existing_status = str(existing.get("evaluation_status", ""))
-            if (
-                existing_status
-                and existing_status not in SCORED_EVALUATION_STATUSES
-            ):
+            if existing_status and existing_status not in SCORED_EVALUATION_STATUSES:
                 continue
             resolved = bool(report.get("resolved", False))
             outcomes[instance_id] = {
@@ -166,11 +162,15 @@ def _evaluation_index(
     return outcomes
 
 
-def _sample_predictions(run_root: Path, sample_index: int) -> tuple[list[dict[str, Any]], list[Path]]:
+def _sample_predictions(
+    run_root: Path, sample_index: int
+) -> tuple[list[dict[str, Any]], list[Path]]:
     merged = run_root / "merged" / f"sample-{sample_index}" / "predictions.jsonl"
-    paths = [merged] if merged.is_file() else sorted(
-        run_root.glob(
-            f"collection/shard-*/samples/sample-{sample_index}/predictions.jsonl"
+    paths = (
+        [merged]
+        if merged.is_file()
+        else sorted(
+            run_root.glob(f"collection/shard-*/samples/sample-{sample_index}/predictions.jsonl")
         )
     )
     rows: list[dict[str, Any]] = []
@@ -184,10 +184,7 @@ def _trajectory_index(
     sample_index: int,
 ) -> dict[str, tuple[str, Path, dict[str, Any]]]:
     index: dict[str, tuple[str, Path, dict[str, Any]]] = {}
-    pattern = (
-        f"collection/shard-*/samples/sample-{sample_index}/"
-        "trajectories/*/trajectory.json"
-    )
+    pattern = f"collection/shard-*/samples/sample-{sample_index}/trajectories/*/trajectory.json"
     for path in sorted(run_root.glob(pattern)):
         wrapper = _safe_json(path)
         instance_id = str(wrapper.get("instance_id") or path.parent.name)
@@ -235,10 +232,138 @@ def _has_complete_temperature_layout(
         return False
     temperature_counts = Counter(str(row["temperature"]) for row in rows)
     expected_temperatures = total_samples // runs_per_temperature
-    return (
-        len(temperature_counts) == expected_temperatures
-        and set(temperature_counts.values()) == {runs_per_temperature}
-    )
+    return len(temperature_counts) == expected_temperatures and set(
+        temperature_counts.values()
+    ) == {runs_per_temperature}
+
+
+def _sample_rollout_rows(root: Path, sample_index: int) -> tuple[list[dict[str, Any]], list[Path]]:
+    predictions, paths = _sample_predictions(root, sample_index)
+    trajectories = _trajectory_index(root, sample_index)
+    evaluations = _evaluation_index(root, sample_index)
+    rows: list[dict[str, Any]] = []
+    for prediction in predictions:
+        instance_id = str(prediction["instance_id"])
+        patch_value = prediction.get("model_patch", "")
+        patch = patch_value if isinstance(patch_value, str) else ""
+        shard = ""
+        wrapper_path: Path | None = None
+        wrapper: dict[str, Any] = {}
+        if instance_id in trajectories:
+            shard, wrapper_path, wrapper = trajectories[instance_id]
+        raw_path, raw = _raw_trajectory(wrapper_path.parent) if wrapper_path else (None, {})
+        evaluation = evaluations.get(
+            instance_id,
+            {
+                "evaluation_status": "not_evaluated",
+                "resolved": False,
+                "evaluation_report_path": "",
+            },
+        )
+        config = wrapper.get("config", {}) if isinstance(wrapper.get("config"), dict) else {}
+        rows.append(
+            {
+                "instance_id": instance_id,
+                "repo": _task_repo(instance_id, wrapper_path),
+                "shard": shard,
+                "sample_index": sample_index,
+                "temperature": prediction.get("temperature", config.get("temperature", "")),
+                "temperature_run_index": prediction.get("temperature_run_index", ""),
+                "seed": prediction.get("seed", config.get("seed", "")),
+                "collection_status": wrapper.get("status", "missing"),
+                "patch_present": bool(patch.strip()),
+                "patch_chars": len(patch),
+                **_usage_metrics(raw),
+                **evaluation,
+                "trajectory_path": str(wrapper_path or ""),
+                "raw_trajectory_path": str(raw_path or ""),
+            }
+        )
+    return rows, paths
+
+
+def _task_rows(
+    grouped: dict[str, list[dict[str, Any]]], total_samples: int
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for instance_id, rollouts in sorted(grouped.items()):
+        evaluated = [row for row in rollouts if _is_scored_evaluation(row)]
+        resolved = [row for row in evaluated if row["resolved"]]
+        complete = len(evaluated) == total_samples
+        resolved_count = len(resolved)
+        rows.append(
+            {
+                "instance_id": instance_id,
+                "repo": rollouts[0]["repo"],
+                "runs_expected": total_samples,
+                "runs_collected": len(rollouts),
+                "runs_with_patch": sum(bool(row["patch_present"]) for row in rollouts),
+                "runs_evaluated": len(evaluated),
+                "runs_resolved": resolved_count,
+                "mixed_temperature_pass_at_1": (
+                    _pass_at_k(total_samples, resolved_count, 1) if complete else ""
+                ),
+                "mixed_temperature_pass_at_4": (
+                    _pass_at_k(total_samples, resolved_count, min(4, total_samples))
+                    if complete
+                    else ""
+                ),
+                "resolved_at_least_once": bool(resolved) if complete else "",
+                "resolved_samples": ",".join(str(row["sample_index"]) for row in resolved),
+            }
+        )
+    return rows
+
+
+def _write_csv(path: Path, columns: tuple[str, ...], rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=columns, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _temperature_summaries(
+    scored_evaluations: list[dict[str, Any]], runs_per_temperature: int
+) -> dict[str, dict[str, Any]]:
+    by_temperature: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in scored_evaluations:
+        by_temperature[str(row["temperature"])].append(row)
+
+    summaries: dict[str, dict[str, Any]] = {}
+    for temperature, rows in sorted(by_temperature.items()):
+        resolved = sum(bool(row["resolved"]) for row in rows)
+        temperature_tasks: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for row in rows:
+            temperature_tasks[str(row["instance_id"])].append(row)
+        complete_tasks = [
+            task_rows
+            for task_rows in temperature_tasks.values()
+            if len(task_rows) == runs_per_temperature
+        ]
+        summaries[temperature] = {
+            "evaluated": len(rows),
+            "resolved": resolved,
+            "resolution_rate": resolved / len(rows) if rows else 0.0,
+            "fully_evaluated_tasks": len(complete_tasks),
+            "pass_at_k": {
+                str(k): (
+                    sum(
+                        _pass_at_k(
+                            runs_per_temperature,
+                            sum(bool(row["resolved"]) for row in task_rows),
+                            k,
+                        )
+                        for task_rows in complete_tasks
+                    )
+                    / len(complete_tasks)
+                    if complete_tasks
+                    else None
+                )
+                for k in range(1, runs_per_temperature + 1)
+            },
+        }
+    return summaries
 
 
 def analyze_swesmith(
@@ -263,56 +388,9 @@ def analyze_swesmith(
     source_paths: list[str] = []
 
     for sample_index in range(total_samples):
-        predictions, paths = _sample_predictions(root, sample_index)
+        sample_rows, paths = _sample_rollout_rows(root, sample_index)
         source_paths.extend(str(path) for path in paths)
-        trajectories = _trajectory_index(root, sample_index)
-        evaluations = _evaluation_index(root, sample_index)
-        for prediction in predictions:
-            instance_id = str(prediction["instance_id"])
-            patch = prediction.get("model_patch", "")
-            patch = patch if isinstance(patch, str) else ""
-            shard = ""
-            wrapper_path: Path | None = None
-            wrapper: dict[str, Any] = {}
-            if instance_id in trajectories:
-                shard, wrapper_path, wrapper = trajectories[instance_id]
-            raw_path: Path | None = None
-            raw: dict[str, Any] = {}
-            if wrapper_path is not None:
-                raw_path, raw = _raw_trajectory(wrapper_path.parent)
-            evaluation = evaluations.get(
-                instance_id,
-                {
-                    "evaluation_status": "not_evaluated",
-                    "resolved": False,
-                    "evaluation_report_path": "",
-                },
-            )
-            config = wrapper.get("config", {}) if isinstance(wrapper.get("config"), dict) else {}
-            rollout_rows.append(
-                {
-                    "instance_id": instance_id,
-                    "repo": _task_repo(instance_id, wrapper_path),
-                    "shard": shard,
-                    "sample_index": sample_index,
-                    "temperature": prediction.get(
-                        "temperature",
-                        config.get("temperature", ""),
-                    ),
-                    "temperature_run_index": prediction.get(
-                        "temperature_run_index",
-                        "",
-                    ),
-                    "seed": prediction.get("seed", config.get("seed", "")),
-                    "collection_status": wrapper.get("status", "missing"),
-                    "patch_present": bool(patch.strip()),
-                    "patch_chars": len(patch),
-                    **_usage_metrics(raw),
-                    **evaluation,
-                    "trajectory_path": str(wrapper_path or ""),
-                    "raw_trajectory_path": str(raw_path or ""),
-                }
-            )
+        rollout_rows.extend(sample_rows)
 
     if not rollout_rows:
         raise FileNotFoundError(f"No SWE-smith sample predictions found under {root}")
@@ -322,94 +400,18 @@ def analyze_swesmith(
     for row in rollout_rows:
         grouped[str(row["instance_id"])].append(row)
 
-    task_rows: list[dict[str, Any]] = []
-    for instance_id, rows in sorted(grouped.items()):
-        evaluated = [row for row in rows if _is_scored_evaluation(row)]
-        resolved = [row for row in evaluated if row["resolved"]]
-        complete = len(evaluated) == total_samples
-        resolved_count = len(resolved)
-        task_rows.append(
-            {
-                "instance_id": instance_id,
-                "repo": rows[0]["repo"],
-                "runs_expected": total_samples,
-                "runs_collected": len(rows),
-                "runs_with_patch": sum(bool(row["patch_present"]) for row in rows),
-                "runs_evaluated": len(evaluated),
-                "runs_resolved": resolved_count,
-                "mixed_temperature_pass_at_1": (
-                    _pass_at_k(total_samples, resolved_count, 1) if complete else ""
-                ),
-                "mixed_temperature_pass_at_4": (
-                    _pass_at_k(total_samples, resolved_count, min(4, total_samples))
-                    if complete
-                    else ""
-                ),
-                "resolved_at_least_once": bool(resolved) if complete else "",
-                "resolved_samples": ",".join(
-                    str(row["sample_index"]) for row in resolved
-                ),
-            }
-        )
-
-    for path, columns, rows in (
-        (Path(rollouts_csv), ROLLOUT_COLUMNS, rollout_rows),
-        (Path(tasks_csv), TASK_COLUMNS, task_rows),
-    ):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=columns, extrasaction="ignore")
-            writer.writeheader()
-            writer.writerows(rows)
+    task_rows = _task_rows(grouped, total_samples)
+    _write_csv(Path(rollouts_csv), ROLLOUT_COLUMNS, rollout_rows)
+    _write_csv(Path(tasks_csv), TASK_COLUMNS, task_rows)
 
     scored_evaluations = [row for row in rollout_rows if _is_scored_evaluation(row)]
     resolved_rollouts = sum(bool(row["resolved"]) for row in scored_evaluations)
-    complete_tasks = [
-        row for row in task_rows if int(row["runs_evaluated"]) == total_samples
-    ]
-    temperatures: dict[str, dict[str, Any]] = {}
-    by_temperature: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for row in scored_evaluations:
-        by_temperature[str(row["temperature"])].append(row)
-    for temperature, rows in sorted(by_temperature.items()):
-        resolved = sum(bool(row["resolved"]) for row in rows)
-        temperature_tasks: dict[str, list[dict[str, Any]]] = defaultdict(list)
-        for row in rows:
-            temperature_tasks[str(row["instance_id"])].append(row)
-        complete_temperature_tasks = [
-            task_rows
-            for task_rows in temperature_tasks.values()
-            if len(task_rows) == runs_per_temperature
-        ]
-        temperatures[temperature] = {
-            "evaluated": len(rows),
-            "resolved": resolved,
-            "resolution_rate": resolved / len(rows) if rows else 0.0,
-            "fully_evaluated_tasks": len(complete_temperature_tasks),
-            "pass_at_k": {
-                str(k): (
-                    sum(
-                        _pass_at_k(
-                            runs_per_temperature,
-                            sum(bool(row["resolved"]) for row in task_rows),
-                            k,
-                        )
-                        for task_rows in complete_temperature_tasks
-                    )
-                    / len(complete_temperature_tasks)
-                    if complete_temperature_tasks
-                    else None
-                )
-                for k in range(1, runs_per_temperature + 1)
-            },
-        }
+    complete_tasks = [row for row in task_rows if int(row["runs_evaluated"]) == total_samples]
+    temperatures = _temperature_summaries(scored_evaluations, runs_per_temperature)
 
     mixed_temperature_pass_at_k = {
         str(k): (
-            sum(
-                _pass_at_k(total_samples, int(row["runs_resolved"]), k)
-                for row in complete_tasks
-            )
+            sum(_pass_at_k(total_samples, int(row["runs_resolved"]), k) for row in complete_tasks)
             / len(complete_tasks)
             if complete_tasks
             else None
@@ -417,14 +419,11 @@ def analyze_swesmith(
         for k in range(1, total_samples + 1)
     }
     status_counts = Counter(str(row["collection_status"]) for row in rollout_rows)
-    evaluation_status_counts = Counter(
-        str(row["evaluation_status"]) for row in rollout_rows
-    )
+    evaluation_status_counts = Counter(str(row["evaluation_status"]) for row in rollout_rows)
     unscored_evaluation_status_counts = {
         status: count
         for status, count in sorted(evaluation_status_counts.items())
-        if status != "not_evaluated"
-        and status not in SCORED_EVALUATION_STATUSES
+        if status != "not_evaluated" and status not in SCORED_EVALUATION_STATUSES
     }
     complete_collection = all(
         _has_complete_temperature_layout(
@@ -432,10 +431,7 @@ def analyze_swesmith(
             total_samples=total_samples,
             runs_per_temperature=runs_per_temperature,
         )
-        and all(
-            str(row["collection_status"]) in COMPLETED_COLLECTION_STATUSES
-            for row in rows
-        )
+        and all(str(row["collection_status"]) in COMPLETED_COLLECTION_STATUSES for row in rows)
         for rows in grouped.values()
     )
     summary = {
@@ -456,9 +452,16 @@ def analyze_swesmith(
         "evaluated_rollouts": len(scored_evaluations),
         "resolved_rollouts": resolved_rollouts,
         "rollout_resolution_rate": (
-            resolved_rollouts / len(scored_evaluations)
-            if scored_evaluations
-            else None
+            resolved_rollouts / len(scored_evaluations) if scored_evaluations else None
+        ),
+        "efficiency": summarize_efficiency(
+            scored_evaluations,
+            fields={
+                "action_steps": "model_api_calls",
+                "prompt_tokens": "prompt_tokens",
+                "completion_tokens": "completion_tokens",
+                "total_tokens": "total_tokens",
+            },
         ),
         "evaluation_status_counts": dict(sorted(evaluation_status_counts.items())),
         "unscored_evaluation_status_counts": unscored_evaluation_status_counts,

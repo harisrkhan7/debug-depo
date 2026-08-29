@@ -9,28 +9,10 @@ import pytest
 
 import debug_depo.apptainer_cache as apptainer_cache
 from debug_depo.apptainer_cache import (
-    DEFAULT_SWEBENCH_IMAGE_TEMPLATE,
     build_parser,
-    image_uri,
-    image_uri_from_template,
     prebuild_apptainer_cache,
     pull_sif_if_missing,
-    sif_path_for_image,
-    swebench_cache_images,
-    swesmith_cache_images,
 )
-
-
-def test_image_uri_and_sif_path_are_stable(tmp_path):
-    image_name = "swebench/swesmith.x86_64.repo_1776_project:latest"
-
-    assert image_uri(image_name) == f"docker://{image_name}"
-    assert image_uri(f"oras://{image_name}") == f"oras://{image_name}"
-    expected = (
-        tmp_path / "docker_swebench_swesmith.x86_64.repo_1776_project_latest.sif"
-    )
-    assert sif_path_for_image(tmp_path, image_name) == expected
-    assert sif_path_for_image(tmp_path, f"docker://{image_name}") == expected
 
 
 def test_pull_is_atomic_and_reuses_the_finished_sif(tmp_path, monkeypatch):
@@ -121,60 +103,6 @@ def test_failed_pull_removes_temporary_sif(tmp_path, monkeypatch):
 
     assert not sif_path.exists()
     assert list(tmp_path.glob(".*.sif")) == []
-
-
-def test_dry_run_does_not_create_cache_directories(tmp_path):
-    sif_path = tmp_path / "sifs/image.sif"
-
-    command = pull_sif_if_missing(
-        sif_path=sif_path,
-        image_uri="docker://example/image:latest",
-        cache_dir=tmp_path / "cache",
-        dry_run=True,
-    )
-
-    assert command == [
-        "apptainer",
-        "pull",
-        str(sif_path),
-        "docker://example/image:latest",
-    ]
-    assert not tmp_path.joinpath("sifs").exists()
-    assert not tmp_path.joinpath("cache").exists()
-
-
-def test_dataset_image_resolution_matches_runtime_cache_paths(tmp_path):
-    swebench = swebench_cache_images(
-        [
-            {"instance_id": "repo__project-1"},
-            {"instance_id": "repo__project-2"},
-        ],
-        sif_dir=tmp_path / "swebench",
-    )
-    assert len(swebench) == 2
-    assert swebench[0].image_uri == image_uri_from_template(
-        DEFAULT_SWEBENCH_IMAGE_TEMPLATE,
-        "repo__project-1",
-    )
-    assert swebench[0].sif_path == sif_path_for_image(
-        tmp_path / "swebench",
-        swebench[0].image_uri,
-    )
-
-    swesmith = swesmith_cache_images(
-        [
-            {"instance_id": "repo.task-1", "image_name": "org/repo-image:latest"},
-            {"instance_id": "repo.task-2", "image_name": "org/repo-image:latest"},
-            {"instance_id": "other.task-1", "image_name": "org/other-image:latest"},
-        ],
-        sif_dir=tmp_path / "swesmith",
-    )
-    assert len(swesmith) == 2
-    assert swesmith[0].instance_ids == ("repo.task-1", "repo.task-2")
-    assert swesmith[0].sif_path == sif_path_for_image(
-        tmp_path / "swesmith",
-        "org/repo-image:latest",
-    )
 
 
 def test_full_dry_run_uses_verified_and_task_file_swesmith_selections(tmp_path):

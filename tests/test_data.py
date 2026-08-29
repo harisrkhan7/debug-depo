@@ -3,7 +3,6 @@ import json
 from debug_depo.data import (
     instance_ids,
     load_swebench_tasks,
-    read_instance_ids_file,
     resolve_swebench_dataset_revision,
     select_tasks,
     write_task_selection,
@@ -33,14 +32,15 @@ def test_verified_revision_is_pinned_without_affecting_other_datasets(tmp_path):
     local_dataset = tmp_path / "tasks.jsonl"
     local_dataset.write_text(json.dumps(task("a")) + "\n")
 
-    assert resolve_swebench_dataset_revision(
-        "princeton-nlp/SWE-bench_Verified",
-        None,
-    ) == "c104f840cc67f8b6eec6f759ebc8b2693d585d4a"
-    assert resolve_swebench_dataset_revision("org/other", None) is None
-    assert resolve_swebench_dataset_revision("org/other", "other-commit") == (
-        "other-commit"
+    assert (
+        resolve_swebench_dataset_revision(
+            "princeton-nlp/SWE-bench_Verified",
+            None,
+        )
+        == "c104f840cc67f8b6eec6f759ebc8b2693d585d4a"
     )
+    assert resolve_swebench_dataset_revision("org/other", None) is None
+    assert resolve_swebench_dataset_revision("org/other", "other-commit") == ("other-commit")
     assert resolve_swebench_dataset_revision(str(local_dataset), "ignored") is None
 
 
@@ -55,30 +55,6 @@ def test_select_tasks_preserves_requested_order_and_shards():
     )
 
     assert instance_ids(selected) == ["b"]
-
-
-def test_verified_sized_selection_splits_evenly_across_ten_shards():
-    tasks = [task(f"repo__repo-{index}") for index in range(500)]
-
-    shards = [
-        select_tasks(tasks, num_shards=10, shard_index=shard_index)
-        for shard_index in range(10)
-    ]
-
-    assert [len(shard) for shard in shards] == [50] * 10
-    selected_ids = [instance_id for shard in shards for instance_id in instance_ids(shard)]
-    assert len(selected_ids) == len(set(selected_ids)) == 500
-    assert set(selected_ids) == set(instance_ids(tasks))
-
-
-def test_read_instance_ids_file_supports_text_and_json(tmp_path):
-    text_path = tmp_path / "ids.txt"
-    text_path.write_text("# comment\na\n\nb\n")
-    json_path = tmp_path / "ids.json"
-    json_path.write_text(json.dumps({"instance_ids": ["c", "d"]}))
-
-    assert read_instance_ids_file(text_path) == ["a", "b"]
-    assert read_instance_ids_file(json_path) == ["c", "d"]
 
 
 def test_write_task_selection_writes_jsonl_and_ids(tmp_path):

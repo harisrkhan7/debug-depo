@@ -6,7 +6,11 @@ export DEBUG_DEPO_ROOT="${DEBUG_DEPO_ROOT:-$ROOT_DIR}"
 source "$ROOT_DIR/cluster/env/load.sh"
 
 VLLM_IMAGE="${VLLM_IMAGE:-$ROOT_DIR/cluster/apptainer/vllm-openai.sif}"
-VLLM_MODEL="${VLLM_MODEL:-${AGENTFORGE_MODEL:-Kwai-Klear/Klear-AgentForge-8B-SFT}}"
+VLLM_MODEL="${VLLM_MODEL:-${AGENTFORGE_MODEL:-$BASELINE_SFT_MODEL}}"
+VLLM_MODEL_REVISION="${VLLM_MODEL_REVISION:-}"
+if [[ -z "$VLLM_MODEL_REVISION" && "$VLLM_MODEL" == "$BASELINE_SFT_MODEL" ]]; then
+  VLLM_MODEL_REVISION="$BASELINE_SFT_MODEL_REVISION"
+fi
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8000}"
 STARTUP_TIMEOUT="${STARTUP_TIMEOUT:-7200}"
@@ -17,9 +21,45 @@ HF_HUB_DISABLE_XET="${HF_HUB_DISABLE_XET:-1}"
 HF_TOKEN_FILE="${HF_TOKEN_FILE:-$HOME/.config/debug-depo/hf_token}"
 read -r -a VLLM_EXTRA_ARGS_ARRAY <<< "${VLLM_EXTRA_ARGS:-}"
 
+# Packaged preference models keep the tokenizer used for training in their
+# adapter directory. Loading it separately avoids a Transformers 4.57.x false
+# positive that treats a locally packaged Qwen3 config as a Mistral tokenizer
+# and recommends replacing Qwen's intentional pre-tokenizer regex.
+VLLM_TOKENIZER="${VLLM_TOKENIZER:-}"
+if [[ -z "$VLLM_TOKENIZER" && -f "$VLLM_MODEL/package_manifest.json" ]]; then
+  project_python="$ROOT_DIR/.venv/bin/python"
+  if [[ -x "$project_python" ]]; then
+    VLLM_TOKENIZER="$(
+      "$project_python" -c '
+import json
+import pathlib
+import sys
+
+manifest = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+adapter = pathlib.Path(str(manifest.get("adapter_path", ""))).expanduser()
+if (adapter / "tokenizer_config.json").is_file():
+    print(adapter)
+' "$VLLM_MODEL/package_manifest.json"
+    )"
+  fi
+fi
+tokenizer_args=()
+if [[ -n "$VLLM_TOKENIZER" ]]; then
+  tokenizer_args=(--tokenizer "$VLLM_TOKENIZER")
+fi
+revision_args=()
+if [[ -n "$VLLM_MODEL_REVISION" ]]; then
+  revision_args=(--revision "$VLLM_MODEL_REVISION")
+fi
+
 if [[ -z "${HF_TOKEN:-}" && -f "$HF_TOKEN_FILE" ]]; then
   HF_TOKEN="$(<"$HF_TOKEN_FILE")"
   export HF_TOKEN
+fi
+
+diagnostic_args=()
+if [[ "${VLLM_LOG_REQUESTS:-1}" == "1" ]]; then
+  diagnostic_args+=(--enable-log-requests --max-log-len "${VLLM_MAX_LOG_LEN:-2048}")
 fi
 if [[ -z "${HF_TOKEN:-}" && -n "${HUGGING_FACE_HUB_TOKEN:-}" ]]; then
   export HF_TOKEN="$HUGGING_FACE_HUB_TOKEN"
@@ -38,7 +78,7 @@ if [[ "$VLLM_IMAGE" != docker://* && "$VLLM_IMAGE" != oras://* && ! -f "$VLLM_IM
   cat >&2 <<MSG
 Missing VLLM_IMAGE: $VLLM_IMAGE
 Build it first, for example:
-  apptainer pull "$VLLM_IMAGE" docker://vllm/vllm-openai:latest
+  apptainer pull "$VLLM_IMAGE" "$VLLM_APPTAINER_SOURCE"
 MSG
   exit 1
 fi
@@ -56,6 +96,7 @@ fi
 
 export APPTAINERENV_HF_HOME="$HF_HOME"
 export APPTAINERENV_HF_HUB_DISABLE_XET="$HF_HUB_DISABLE_XET"
+export APPTAINERENV_RUST_BACKTRACE="$RUST_BACKTRACE"
 if [[ -n "${HF_TOKEN:-}" ]]; then
   export APPTAINERENV_HF_TOKEN="$HF_TOKEN"
 fi
@@ -68,11 +109,14 @@ apptainer exec --nv \
   --pwd "$ROOT_DIR" \
   "$VLLM_IMAGE" \
   vllm serve "$VLLM_MODEL" \
+    "${revision_args[@]}" \
     --host "$HOST" \
     --port "$PORT" \
     --served-model-name "$SERVED_MODEL_NAME" \
+    "${tokenizer_args[@]}" \
     --max-model-len "$MAX_MODEL_LEN" \
     --gpu-memory-utilization "$VLLM_GPU_MEMORY_UTILIZATION" \
+    "${diagnostic_args[@]}" \
     "${VLLM_EXTRA_ARGS_ARRAY[@]}" \
     "$@" &
 server_pid=$!

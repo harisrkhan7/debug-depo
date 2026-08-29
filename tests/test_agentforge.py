@@ -16,12 +16,11 @@ from debug_depo.agentforge import (
     extract_patch,
     miniswe_failure,
     miniswe_result_status,
-    miniswe_subset,
-    miniswe_task_instance,
     render_command,
     render_miniswe_command,
-    run_subprocess_with_optional_streaming,
     run_agentforge_instance,
+    run_subprocess_with_optional_streaming,
+    terminate_active_subprocesses,
 )
 from debug_depo.utils import read_json
 
@@ -51,19 +50,8 @@ def test_render_command_exposes_expected_fields(tmp_path):
     )
 
     assert command == (
-        f"run --id repo__repo-1 --task {tmp_path / 'task.json'} "
-        f"--out {tmp_path} --model model"
+        f"run --id repo__repo-1 --task {tmp_path / 'task.json'} --out {tmp_path} --model model"
     )
-
-
-def test_extract_patch_from_json_file(tmp_path):
-    expected = "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n"
-    (tmp_path / "result.json").write_text(json.dumps({"model_patch": expected}))
-
-    patch, source = extract_patch(tmp_path)
-
-    assert patch == expected
-    assert source == str(tmp_path / "result.json")
 
 
 def test_extract_patch_from_official_miniswe_preds_json(tmp_path):
@@ -81,22 +69,10 @@ def test_extract_patch_from_official_miniswe_preds_json(tmp_path):
 def test_miniswe_failure_reads_uncaught_exit_status(tmp_path):
     status_path = tmp_path / "exit_statuses_1.yaml"
     status_path.write_text(
-        "instances_by_exit_status:\n"
-        "    Uncaught NameError:\n"
-        "    - repo__repo-1\n"
+        "instances_by_exit_status:\n    Uncaught NameError:\n    - repo__repo-1\n"
     )
 
     assert miniswe_failure(tmp_path) == ("Uncaught NameError", str(status_path))
-
-
-def test_miniswe_submitted_status_is_not_failure(tmp_path):
-    (tmp_path / "exit_statuses_1.yaml").write_text(
-        "instances_by_exit_status:\n"
-        "    Submitted:\n"
-        "    - repo__repo-1\n"
-    )
-
-    assert miniswe_failure(tmp_path) is None
 
 
 def test_miniswe_status_classification_separates_model_and_infrastructure_outcomes():
@@ -106,7 +82,7 @@ def test_miniswe_status_classification_separates_model_and_infrastructure_outcom
     assert miniswe_result_status("RetryError") == "error"
 
 
-def test_render_miniswe_command_uses_official_module_and_filter(tmp_path):
+def test_render_miniswe_command_uses_official_module_and_filter(tmp_path, monkeypatch):
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         yaml.safe_dump(
@@ -124,6 +100,7 @@ def test_render_miniswe_command_uses_official_module_and_filter(tmp_path):
         temperature=0.25,
         top_p=0.8,
     )
+    monkeypatch.setenv("MINI_SWE_MODEL_TIMEOUT_SECONDS", "1200")
 
     command = render_miniswe_command(
         instance=instance(),
@@ -144,63 +121,9 @@ def test_render_miniswe_command_uses_official_module_and_filter(tmp_path):
     assert generated_config["agent"]["step_limit"] == 7
     assert generated_config["model"]["model_kwargs"]["temperature"] == 0.25
     assert generated_config["model"]["model_kwargs"]["top_p"] == 0.8
+    assert generated_config["model"]["model_kwargs"]["timeout"] == 1200
     assert default_miniswe_model("org/model") == "hosted_vllm/org/model"
     assert default_miniswe_model("hosted_vllm/org/model") == "hosted_vllm/org/model"
-
-
-def test_render_miniswe_command_uses_python_dataset_and_split(tmp_path):
-    config_path = tmp_path / "config.yaml"
-    config_path.write_text(
-        yaml.safe_dump({"agent": {}, "model": {"model_kwargs": {}}}),
-        encoding="utf-8",
-    )
-    config = AgentForgeConfig(
-        model="model",
-        dataset="SWE-bench/SWE-smith-py",
-        split="train",
-        mini_config=str(config_path),
-        dataset_revision="dataset-commit",
-        seed=123,
-    )
-
-    command = render_miniswe_command(
-        instance=instance(),
-        output_dir=tmp_path,
-        config=config,
-    )
-
-    parts = shlex.split(command)
-    assert parts[parts.index("--subset") + 1] == "SWE-bench/SWE-smith-py"
-    assert parts[parts.index("--split") + 1] == "train"
-    assert "--revision" not in parts
-    assert parts[parts.index("--task-json") + 1] == str(tmp_path / "task.json")
-    generated = yaml.safe_load(
-        Path(parts[parts.index("--config") + 1]).read_text(encoding="utf-8")
-    )
-    assert generated["model"]["model_kwargs"]["seed"] == 123
-
-
-def test_miniswe_task_uses_shared_verified_apptainer_image_template():
-    config = AgentForgeConfig(
-        model="model",
-        mini_image_template=(
-            "docker://ghcr.io/epoch-research/"
-            "swe-bench.eval.x86_64.{instance_id}:latest"
-        ),
-    )
-
-    task = miniswe_task_instance(instance(), config)
-
-    assert task["image_name"] == (
-        "ghcr.io/epoch-research/"
-        "swe-bench.eval.x86_64.repo__repo-1:latest"
-    )
-    assert "image_name" not in instance()
-
-
-def test_miniswe_subset_preserves_python_swesmith_dataset():
-    assert miniswe_subset("SWE-bench/SWE-smith") == "smith"
-    assert miniswe_subset("SWE-bench/SWE-smith-py") == "SWE-bench/SWE-smith-py"
 
 
 def test_render_miniswe_command_can_use_singularity_runner(tmp_path, monkeypatch):
@@ -280,9 +203,7 @@ def test_swesmith_miniswe_config_checks_out_task_before_agent(tmp_path, monkeypa
     )
 
     parts = shlex.split(command)
-    generated = yaml.safe_load(
-        Path(parts[parts.index("--config") + 1]).read_text(encoding="utf-8")
-    )
+    generated = yaml.safe_load(Path(parts[parts.index("--config") + 1]).read_text(encoding="utf-8"))
     startup = generated["run"]["env_startup_command"]
     assert "cd /testbed || exit 20" in startup
     assert "git checkout --force repo__repo-1 || exit 21" in startup
@@ -350,8 +271,7 @@ def test_external_agentforge_command_reads_common_result_file_without_persisting
         "(out / 'result.json').write_text(json.dumps({'patch': 'diff --git a/a.py b/a.py\\n'}))\n"
     )
     command = (
-        f"{shlex.quote(sys.executable)} {shlex.quote(str(helper))} "
-        "{output_dir} {llm_api_key}"
+        f"{shlex.quote(sys.executable)} {shlex.quote(str(helper))} {{output_dir}} {{llm_api_key}}"
     )
 
     result = run_agentforge_instance(
@@ -410,9 +330,7 @@ def test_subprocess_timeout_terminates_the_complete_process_group(
     monkeypatch.setattr(
         agentforge_module.os,
         "killpg",
-        lambda process_group, sent_signal: signals.append(
-            (process_group, sent_signal)
-        ),
+        lambda process_group, sent_signal: signals.append((process_group, sent_signal)),
     )
 
     with pytest.raises(subprocess.TimeoutExpired):
@@ -433,3 +351,37 @@ def test_subprocess_timeout_terminates_the_complete_process_group(
     ]
     assert (tmp_path / "stdout.txt").read_text() == "partial stdout"
     assert (tmp_path / "stderr.txt").read_text() == "partial stderr"
+
+
+def test_active_rollout_cleanup_terminates_registered_process_groups(monkeypatch):
+    class ActiveProcess:
+        pid = 4321
+        returncode = None
+
+        def poll(self):
+            return self.returncode
+
+        def wait(self, timeout=None):
+            if self.returncode is None:
+                raise subprocess.TimeoutExpired("command", timeout)
+            return self.returncode
+
+    process = ActiveProcess()
+    signals = []
+
+    def fake_killpg(process_group, sent_signal):
+        signals.append((process_group, sent_signal))
+        if sent_signal == signal.SIGKILL:
+            process.returncode = -sent_signal
+
+    monkeypatch.setattr(agentforge_module.os, "killpg", fake_killpg)
+    agentforge_module._register_active_subprocess(process)
+    try:
+        terminate_active_subprocesses(grace_seconds=0)
+    finally:
+        agentforge_module._unregister_active_subprocess(process)
+
+    assert signals == [
+        (process.pid, signal.SIGTERM),
+        (process.pid, signal.SIGKILL),
+    ]

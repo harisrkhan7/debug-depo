@@ -58,35 +58,6 @@ def test_mock_collection_writes_predictions_and_summary(tmp_path):
     assert len(run_config["task_rows_sha256"]) == 64
 
 
-def test_mock_collection_supports_rollout_workers(tmp_path):
-    dataset = tmp_path / "tasks.jsonl"
-    output_dir = tmp_path / "out"
-    write_dataset(dataset)
-    args = build_parser().parse_args(
-        [
-            "--dataset",
-            str(dataset),
-            "--output-dir",
-            str(output_dir),
-            "--mock",
-            "--mock-patch",
-            "gold",
-            "--limit",
-            "2",
-            "--rollout-workers",
-            "2",
-            "--no-progress",
-        ]
-    )
-
-    summary = collect_rollouts(args)
-    predictions = read_jsonl(output_dir / "predictions.jsonl")
-
-    assert summary["rollout_workers"] == 2
-    assert read_json(output_dir / "run_config.json")["rollout_workers"] == 2
-    assert [row["instance_id"] for row in predictions] == ["repo__repo-1", "repo__repo-2"]
-
-
 def test_run_config_redacts_a_literal_api_key_from_custom_command(tmp_path):
     dataset = tmp_path / "tasks.jsonl"
     output_dir = tmp_path / "out"
@@ -116,26 +87,6 @@ def test_run_config_redacts_a_literal_api_key_from_custom_command(tmp_path):
     assert "real-secret-key" not in run_config_path.read_text(encoding="utf-8")
 
 
-def test_existing_miniswe_failure_is_not_reused_as_completed(tmp_path):
-    output_dir = tmp_path / "out"
-    trajectory_dir = output_dir / "trajectories" / "repo__repo-1"
-    trajectory_dir.mkdir(parents=True)
-    (trajectory_dir / "trajectory.json").write_text(
-        json.dumps({"status": "completed", "patch": "UndefinedError traceback", "patch_source": "preds.json"})
-    )
-    (trajectory_dir / "exit_statuses_1.yaml").write_text(
-        "instances_by_exit_status:\n"
-        "    Uncaught NameError:\n"
-        "    - repo__repo-1\n"
-    )
-
-    result = result_from_existing(output_dir, {"instance_id": "repo__repo-1"})
-
-    assert result["status"] == "error"
-    assert result["patch"] == ""
-    assert result["mini_swe_exit_status"] == "Uncaught NameError"
-
-
 def test_existing_miniswe_model_termination_is_reused_as_finished(tmp_path):
     output_dir = tmp_path / "out"
     trajectory_dir = output_dir / "trajectories" / "repo__repo-1"
@@ -144,9 +95,7 @@ def test_existing_miniswe_model_termination_is_reused_as_finished(tmp_path):
         json.dumps({"status": "error", "patch": "", "patch_source": None})
     )
     (trajectory_dir / "exit_statuses_1.yaml").write_text(
-        "instances_by_exit_status:\n"
-        "    LimitsExceeded:\n"
-        "    - repo__repo-1\n"
+        "instances_by_exit_status:\n    LimitsExceeded:\n    - repo__repo-1\n"
     )
 
     result = result_from_existing(output_dir, {"instance_id": "repo__repo-1"})

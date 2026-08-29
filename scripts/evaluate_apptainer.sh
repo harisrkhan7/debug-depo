@@ -24,6 +24,7 @@ if [[ -z "$IMAGE_TEMPLATE" ]]; then
   IMAGE_TEMPLATE='docker://ghcr.io/epoch-research/swe-bench.eval.x86_64.{instance_id}:latest'
 fi
 MAX_WORKERS="${MAX_WORKERS:-1}"
+THREADS_PER_TASK="${EVAL_THREADS_PER_TASK:-1}"
 TIMEOUT="${TIMEOUT:-1800}"
 
 cd "$ROOT_DIR"
@@ -41,6 +42,7 @@ args=(
   --sif-dir "$SIF_DIR"
   --image-template "$IMAGE_TEMPLATE"
   --max-workers "$MAX_WORKERS"
+  --threads-per-task "$THREADS_PER_TASK"
   --timeout "$TIMEOUT"
 )
 if [[ -n "$DATASET_REVISION" ]]; then

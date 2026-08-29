@@ -1,0 +1,667 @@
+{
+  "allow_incomplete_telemetry": false,
+  "arms": [
+    {
+      "efficiency": {
+        "all": {
+          "action_steps": {
+            "available": 500,
+            "coverage": 1.0,
+            "max": 200.0,
+            "mean": 58.464,
+            "median": 49.5,
+            "min": 7.0,
+            "missing": 0,
+            "p90": 108.20000000000005,
+            "sum": 29232.0
+          },
+          "completion_tokens": {
+            "available": 500,
+            "coverage": 1.0,
+            "max": 37133.0,
+            "mean": 11386.404,
+            "median": 9007.5,
+            "min": 889.0,
+            "missing": 0,
+            "p90": 23166.100000000006,
+            "sum": 5693202.0
+          },
+          "prompt_tokens": {
+            "available": 500,
+            "coverage": 1.0,
+            "max": 7840567.0,
+            "mean": 1205760.212,
+            "median": 635617.5,
+            "min": 19388.0,
+            "missing": 0,
+            "p90": 3084762.1000000006,
+            "sum": 602880106.0
+          },
+          "total_tokens": {
+            "available": 500,
+            "coverage": 1.0,
+            "max": 7864422.0,
+            "mean": 1217146.616,
+            "median": 643223.5,
+            "min": 20277.0,
+            "missing": 0,
+            "p90": 3107468.3000000007,
+            "sum": 608573308.0
+          },
+          "trajectories": 500
+        },
+        "resolution_rate": 0.392,
+        "resolved": {
+          "action_steps": {
+            "available": 196,
+            "coverage": 1.0,
+            "max": 144.0,
+            "mean": 43.44897959183673,
+            "median": 35.0,
+            "min": 7.0,
+            "missing": 0,
+            "p90": 80.0,
+            "sum": 8516.0
+          },
+          "completion_tokens": {
+            "available": 196,
+            "coverage": 1.0,
+            "max": 30086.0,
+            "mean": 8062.938775510204,
+            "median": 6549.0,
+            "min": 889.0,
+            "missing": 0,
+            "p90": 15217.0,
+            "sum": 1580336.0
+          },
+          "prompt_tokens": {
+            "available": 196,
+            "coverage": 1.0,
+            "max": 4747885.0,
+            "mean": 666859.9642857143,
+            "median": 364483.0,
+            "min": 19388.0,
+            "missing": 0,
+            "p90": 1673405.0,
+            "sum": 130704553.0
+          },
+          "total_tokens": {
+            "available": 196,
+            "coverage": 1.0,
+            "max": 4777971.0,
+            "mean": 674922.9030612245,
+            "median": 370863.5,
+            "min": 20277.0,
+            "missing": 0,
+            "p90": 1687713.5,
+            "sum": 132284889.0
+          },
+          "trajectories": 196
+        },
+        "resolved_trajectories": 196,
+        "total_tokens_per_resolved_task": 3104965.8571428573,
+        "trajectories": 500
+      },
+      "is_baseline": true,
+      "name": "sft",
+      "paired_deltas_vs_baseline": {
+        "all": {
+          "action_steps": {
+            "available": 500,
+            "coverage": 1.0,
+            "max": 0.0,
+            "mean": 0.0,
+            "median": 0.0,
+            "min": 0.0,
+            "missing": 0,
+            "p90": 0.0,
+            "sum": 0.0
+          },
+          "completion_tokens": {
+            "available": 500,
+            "coverage": 1.0,
+            "max": 0.0,
+            "mean": 0.0,
+            "median": 0.0,
+            "min": 0.0,
+            "missing": 0,
+            "p90": 0.0,
+            "sum": 0.0
+          },
+          "prompt_tokens": {
+            "available": 500,
+            "coverage": 1.0,
+            "max": 0.0,
+            "mean": 0.0,
+            "median": 0.0,
+            "min": 0.0,
+            "missing": 0,
+            "p90": 0.0,
+            "sum": 0.0
+          },
+          "tasks": 500,
+          "total_tokens": {
+            "available": 500,
+            "coverage": 1.0,
+            "max": 0.0,
+            "mean": 0.0,
+            "median": 0.0,
+            "min": 0.0,
+            "missing": 0,
+            "p90": 0.0,
+            "sum": 0.0
+          }
+        },
+        "both_resolved": {
+          "action_steps": {
+            "available": 196,
+            "coverage": 1.0,
+            "max": 0.0,
+            "mean": 0.0,
+            "median": 0.0,
+            "min": 0.0,
+            "missing": 0,
+            "p90": 0.0,
+            "sum": 0.0
+          },
+          "completion_tokens": {
+            "available": 196,
+            "coverage": 1.0,
+            "max": 0.0,
+            "mean": 0.0,
+            "median": 0.0,
+            "min": 0.0,
+            "missing": 0,
+            "p90": 0.0,
+            "sum": 0.0
+          },
+          "prompt_tokens": {
+            "available": 196,
+            "coverage": 1.0,
+            "max": 0.0,
+            "mean": 0.0,
+            "median": 0.0,
+            "min": 0.0,
+            "missing": 0,
+            "p90": 0.0,
+            "sum": 0.0
+          },
+          "tasks": 196,
+          "total_tokens": {
+            "available": 196,
+            "coverage": 1.0,
+            "max": 0.0,
+            "mean": 0.0,
+            "median": 0.0,
+            "min": 0.0,
+            "missing": 0,
+            "p90": 0.0,
+            "sum": 0.0
+          }
+        }
+      },
+      "path": "/lambda/nfs/Debug-Depo/debug-depo-persistent/scratch/runs/swesmith-train-1000-r2-sft-test-500/analysis/instances.csv",
+      "rankable": true,
+      "resolution_rate_delta_vs_baseline": 0.0,
+      "resolution_transitions_vs_baseline": {
+        "both_resolved": 196,
+        "both_unresolved": 304,
+        "gained": 0,
+        "lost": 0
+      },
+      "selection_eligible": true,
+      "success_noninferior": true
+    },
+    {
+      "efficiency": {
+        "all": {
+          "action_steps": {
+            "available": 500,
+            "coverage": 1.0,
+            "max": 200.0,
+            "mean": 57.896,
+            "median": 50.0,
+            "min": 7.0,
+            "missing": 0,
+            "p90": 102.0,
+            "sum": 28948.0
+          },
+          "completion_tokens": {
+            "available": 500,
+            "coverage": 1.0,
+            "max": 45732.0,
+            "mean": 11286.81,
+            "median": 9318.5,
+            "min": 922.0,
+            "missing": 0,
+            "p90": 21684.4,
+            "sum": 5643405.0
+          },
+          "prompt_tokens": {
+            "available": 500,
+            "coverage": 1.0,
+            "max": 7002101.0,
+            "mean": 1144856.422,
+            "median": 709218.5,
+            "min": 18994.0,
+            "missing": 0,
+            "p90": 2618240.100000003,
+            "sum": 572428211.0
+          },
+          "total_tokens": {
+            "available": 500,
+            "coverage": 1.0,
+            "max": 7026509.0,
+            "mean": 1156143.232,
+            "median": 716226.0,
+            "min": 19916.0,
+            "missing": 0,
+            "p90": 2640770.100000003,
+            "sum": 578071616.0
+          },
+          "trajectories": 500
+        },
+        "resolution_rate": 0.364,
+        "resolved": {
+          "action_steps": {
+            "available": 182,
+            "coverage": 1.0,
+            "max": 129.0,
+            "mean": 43.18681318681319,
+            "median": 37.0,
+            "min": 7.0,
+            "missing": 0,
+            "p90": 73.9,
+            "sum": 7860.0
+          },
+          "completion_tokens": {
+            "available": 182,
+            "coverage": 1.0,
+            "max": 26880.0,
+            "mean": 7836.972527472528,
+            "median": 6735.0,
+            "min": 922.0,
+            "missing": 0,
+            "p90": 14097.800000000001,
+            "sum": 1426329.0
+          },
+          "prompt_tokens": {
+            "available": 182,
+            "coverage": 1.0,
+            "max": 3700859.0,
+            "mean": 614370.6098901099,
+            "median": 416652.0,
+            "min": 18994.0,
+            "missing": 0,
+            "p90": 1457711.3000000005,
+            "sum": 111815451.0
+          },
+          "total_tokens": {
+            "available": 182,
+            "coverage": 1.0,
+            "max": 3727739.0,
+            "mean": 622207.5824175824,
+            "median": 424241.5,
+            "min": 19916.0,
+            "missing": 0,
+            "p90": 1477053.7000000007,
+            "sum": 113241780.0
+          },
+          "trajectories": 182
+        },
+        "resolved_trajectories": 182,
+        "total_tokens_per_resolved_task": 3176217.6703296704,
+        "trajectories": 500
+      },
+      "is_baseline": false,
+      "name": "dmpo",
+      "paired_deltas_vs_baseline": {
+        "all": {
+          "action_steps": {
+            "available": 500,
+            "coverage": 1.0,
+            "max": 168.0,
+            "mean": -0.568,
+            "median": 0.0,
+            "min": -132.0,
+            "missing": 0,
+            "p90": 30.100000000000023,
+            "sum": -284.0
+          },
+          "completion_tokens": {
+            "available": 500,
+            "coverage": 1.0,
+            "max": 30960.0,
+            "mean": -99.594,
+            "median": -70.5,
+            "min": -24425.0,
+            "missing": 0,
+            "p90": 7541.600000000003,
+            "sum": -49797.0
+          },
+          "prompt_tokens": {
+            "available": 500,
+            "coverage": 1.0,
+            "max": 5184524.0,
+            "mean": -60903.79,
+            "median": 2347.5,
+            "min": -5245852.0,
+            "missing": 0,
+            "p90": 896641.6000000003,
+            "sum": -30451895.0
+          },
+          "tasks": 500,
+          "total_tokens": {
+            "available": 500,
+            "coverage": 1.0,
+            "max": 5202703.0,
+            "mean": -61003.384,
+            "median": 1922.5,
+            "min": -5255156.0,
+            "missing": 0,
+            "p90": 904630.9000000003,
+            "sum": -30501692.0
+          }
+        },
+        "both_resolved": {
+          "action_steps": {
+            "available": 143,
+            "coverage": 1.0,
+            "max": 65.0,
+            "mean": 0.46153846153846156,
+            "median": 1.0,
+            "min": -83.0,
+            "missing": 0,
+            "p90": 22.799999999999997,
+            "sum": 66.0
+          },
+          "completion_tokens": {
+            "available": 143,
+            "coverage": 1.0,
+            "max": 13145.0,
+            "mean": 27.916083916083917,
+            "median": 47.0,
+            "min": -18402.0,
+            "missing": 0,
+            "p90": 5190.2,
+            "sum": 3992.0
+          },
+          "prompt_tokens": {
+            "available": 143,
+            "coverage": 1.0,
+            "max": 1948392.0,
+            "mean": -22644.083916083917,
+            "median": 4515.0,
+            "min": -2805672.0,
+            "missing": 0,
+            "p90": 435863.99999999994,
+            "sum": -3238104.0
+          },
+          "tasks": 143,
+          "total_tokens": {
+            "available": 143,
+            "coverage": 1.0,
+            "max": 1955437.0,
+            "mean": -22616.167832167834,
+            "median": 4114.0,
+            "min": -2824074.0,
+            "missing": 0,
+            "p90": 442465.79999999993,
+            "sum": -3234112.0
+          }
+        }
+      },
+      "path": "/lambda/nfs/Debug-Depo/debug-depo-persistent/scratch/runs/swesmith-train-1000-r2-dmpo-g07-paper-informed-test-500/analysis/instances.csv",
+      "rankable": true,
+      "resolution_rate_delta_vs_baseline": -0.028000000000000025,
+      "resolution_transitions_vs_baseline": {
+        "both_resolved": 143,
+        "both_unresolved": 265,
+        "gained": 39,
+        "lost": 53
+      },
+      "selection_eligible": true,
+      "success_noninferior": true
+    },
+    {
+      "efficiency": {
+        "all": {
+          "action_steps": {
+            "available": 500,
+            "coverage": 1.0,
+            "max": 200.0,
+            "mean": 57.414,
+            "median": 48.0,
+            "min": 9.0,
+            "missing": 0,
+            "p90": 105.10000000000002,
+            "sum": 28707.0
+          },
+          "completion_tokens": {
+            "available": 500,
+            "coverage": 1.0,
+            "max": 55587.0,
+            "mean": 11006.878,
+            "median": 8643.5,
+            "min": 1034.0,
+            "missing": 0,
+            "p90": 22814.0,
+            "sum": 5503439.0
+          },
+          "prompt_tokens": {
+            "available": 500,
+            "coverage": 1.0,
+            "max": 7192413.0,
+            "mean": 1165300.922,
+            "median": 666629.5,
+            "min": 43838.0,
+            "missing": 0,
+            "p90": 3070638.800000001,
+            "sum": 582650461.0
+          },
+          "total_tokens": {
+            "available": 500,
+            "coverage": 1.0,
+            "max": 7208714.0,
+            "mean": 1176307.8,
+            "median": 680641.5,
+            "min": 45018.0,
+            "missing": 0,
+            "p90": 3094889.900000001,
+            "sum": 588153900.0
+          },
+          "trajectories": 500
+        },
+        "resolution_rate": 0.388,
+        "resolved": {
+          "action_steps": {
+            "available": 194,
+            "coverage": 1.0,
+            "max": 134.0,
+            "mean": 41.329896907216494,
+            "median": 36.0,
+            "min": 9.0,
+            "missing": 0,
+            "p90": 69.70000000000002,
+            "sum": 8018.0
+          },
+          "completion_tokens": {
+            "available": 194,
+            "coverage": 1.0,
+            "max": 24366.0,
+            "mean": 7339.051546391753,
+            "median": 6477.0,
+            "min": 1180.0,
+            "missing": 0,
+            "p90": 12759.800000000001,
+            "sum": 1423776.0
+          },
+          "prompt_tokens": {
+            "available": 194,
+            "coverage": 1.0,
+            "max": 4070671.0,
+            "mean": 573709.3608247422,
+            "median": 365720.0,
+            "min": 43838.0,
+            "missing": 0,
+            "p90": 1193391.0000000005,
+            "sum": 111299616.0
+          },
+          "total_tokens": {
+            "available": 194,
+            "coverage": 1.0,
+            "max": 4086643.0,
+            "mean": 581048.412371134,
+            "median": 371485.5,
+            "min": 45018.0,
+            "missing": 0,
+            "p90": 1205489.7000000004,
+            "sum": 112723392.0
+          },
+          "trajectories": 194
+        },
+        "resolved_trajectories": 194,
+        "total_tokens_per_resolved_task": 3031721.1340206186,
+        "trajectories": 500
+      },
+      "is_baseline": false,
+      "name": "depo",
+      "paired_deltas_vs_baseline": {
+        "all": {
+          "action_steps": {
+            "available": 500,
+            "coverage": 1.0,
+            "max": 128.0,
+            "mean": -1.05,
+            "median": 0.0,
+            "min": -108.0,
+            "missing": 0,
+            "p90": 34.0,
+            "sum": -525.0
+          },
+          "completion_tokens": {
+            "available": 500,
+            "coverage": 1.0,
+            "max": 33518.0,
+            "mean": -379.526,
+            "median": -192.0,
+            "min": -23217.0,
+            "missing": 0,
+            "p90": 6837.800000000004,
+            "sum": -189763.0
+          },
+          "prompt_tokens": {
+            "available": 500,
+            "coverage": 1.0,
+            "max": 5073847.0,
+            "mean": -40459.29,
+            "median": -948.0,
+            "min": -5190395.0,
+            "missing": 0,
+            "p90": 1264903.0,
+            "sum": -20229645.0
+          },
+          "tasks": 500,
+          "total_tokens": {
+            "available": 500,
+            "coverage": 1.0,
+            "max": 5077785.0,
+            "mean": -40838.816,
+            "median": -2196.5,
+            "min": -5208969.0,
+            "missing": 0,
+            "p90": 1272842.5,
+            "sum": -20419408.0
+          }
+        },
+        "both_resolved": {
+          "action_steps": {
+            "available": 154,
+            "coverage": 1.0,
+            "max": 66.0,
+            "mean": -1.8311688311688312,
+            "median": 0.5,
+            "min": -77.0,
+            "missing": 0,
+            "p90": 19.0,
+            "sum": -282.0
+          },
+          "completion_tokens": {
+            "available": 154,
+            "coverage": 1.0,
+            "max": 16217.0,
+            "mean": -633.9090909090909,
+            "median": 10.0,
+            "min": -19214.0,
+            "missing": 0,
+            "p90": 3506.2000000000016,
+            "sum": -97622.0
+          },
+          "prompt_tokens": {
+            "available": 154,
+            "coverage": 1.0,
+            "max": 2052737.0,
+            "mean": -87559.84415584416,
+            "median": 4775.0,
+            "min": -3686547.0,
+            "missing": 0,
+            "p90": 383581.1000000002,
+            "sum": -13484216.0
+          },
+          "tasks": 154,
+          "total_tokens": {
+            "available": 154,
+            "coverage": 1.0,
+            "max": 2064875.0,
+            "mean": -88193.75324675324,
+            "median": 5112.0,
+            "min": -3700983.0,
+            "missing": 0,
+            "p90": 387376.3000000002,
+            "sum": -13581838.0
+          }
+        }
+      },
+      "path": "/lambda/nfs/Debug-Depo/debug-depo-persistent/scratch/runs/swesmith-train-1000-r2-dmpo-g07-paper-informed-depo-total-balanced-test-500/analysis/instances.csv",
+      "rankable": true,
+      "resolution_rate_delta_vs_baseline": -0.0040000000000000036,
+      "resolution_transitions_vs_baseline": {
+        "both_resolved": 154,
+        "both_unresolved": 264,
+        "gained": 40,
+        "lost": 42
+      },
+      "selection_eligible": true,
+      "success_noninferior": true
+    }
+  ],
+  "baseline": "sft",
+  "baseline_resolution_rate": 0.392,
+  "cost_scope": "all_evaluated_attempts",
+  "eligible_ranking": [
+    {
+      "name": "depo",
+      "resolution_rate": 0.388,
+      "total_tokens_per_resolved_task": 3031721.1340206186
+    },
+    {
+      "name": "sft",
+      "resolution_rate": 0.392,
+      "total_tokens_per_resolved_task": 3104965.8571428573
+    },
+    {
+      "name": "dmpo",
+      "resolution_rate": 0.364,
+      "total_tokens_per_resolved_task": 3176217.6703296704
+    }
+  ],
+  "expected_tasks": 500,
+  "ranking_metric": "total_tokens_per_resolved_task",
+  "schema_version": 1,
+  "selected_arm": "depo",
+  "success_threshold": 0.362,
+  "success_tolerance": 0.03,
+  "task_count": 500,
+  "task_matrix": "exact_instance_id_match",
+  "task_matrix_sha256": "a6b0fd7c8c2969a0eef892e032250adcfa6d32362d395c246930e61b575ac9b9"
+}

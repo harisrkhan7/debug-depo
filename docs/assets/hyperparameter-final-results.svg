@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 700" role="img" aria-labelledby="title desc">
+<title id="title">Confirmatory and external-test performance</title>
+<desc id="desc">Resolution rates with Wilson intervals and total tokens per resolved task for SFT, DMPO and sequential DEPO.</desc>
+<rect width="100%" height="100%" fill="white"/>
+<text x="75" y="34" fill="#172033" font-family="Arial, sans-serif" font-size="22" font-weight="700">500-task evaluation</text>
+<text x="75" y="58" fill="#536176" font-family="Arial, sans-serif" font-size="13">Error bars are 95% Wilson intervals; cost includes all evaluated attempts.</text>
+<text x="75" y="92" fill="#172033" font-family="Arial, sans-serif" font-size="17" font-weight="700">A. Resolution rate</text>
+<text x="970" y="92" fill="#92400e" font-family="Arial, sans-serif" font-size="12" text-anchor="end">orange dashed: -3 pp tolerance</text>
+<text x="75" y="405" fill="#172033" font-family="Arial, sans-serif" font-size="17" font-weight="700">B. Total tokens per resolved task</text>
+<line x1="75" y1="350.0" x2="970" y2="350.0" stroke="#dbe3ec"/>
+<text x="65" y="354.0" fill="#172033" font-family="Arial, sans-serif" font-size="12" text-anchor="end">0%</text>
+<line x1="75" y1="296.7" x2="970" y2="296.7" stroke="#dbe3ec"/>
+<text x="65" y="300.6666666666667" fill="#172033" font-family="Arial, sans-serif" font-size="12" text-anchor="end">10%</text>
+<line x1="75" y1="243.3" x2="970" y2="243.3" stroke="#dbe3ec"/>
+<text x="65" y="247.33333333333334" fill="#172033" font-family="Arial, sans-serif" font-size="12" text-anchor="end">20%</text>
+<line x1="75" y1="190.0" x2="970" y2="190.0" stroke="#dbe3ec"/>
+<text x="65" y="194.0" fill="#172033" font-family="Arial, sans-serif" font-size="12" text-anchor="end">30%</text>
+<line x1="75" y1="136.7" x2="970" y2="136.7" stroke="#dbe3ec"/>
+<text x="65" y="140.66666666666669" fill="#172033" font-family="Arial, sans-serif" font-size="12" text-anchor="end">40%</text>
+<line x1="75" y1="625.0" x2="970" y2="625.0" stroke="#dbe3ec"/>
+<text x="65" y="629.0" fill="#172033" font-family="Arial, sans-serif" font-size="12" text-anchor="end">0M</text>
+<line x1="75" y1="596.4" x2="970" y2="596.4" stroke="#dbe3ec"/>
+<text x="65" y="600.4285714285714" fill="#172033" font-family="Arial, sans-serif" font-size="12" text-anchor="end">1M</text>
+<line x1="75" y1="567.9" x2="970" y2="567.9" stroke="#dbe3ec"/>
+<text x="65" y="571.8571428571429" fill="#172033" font-family="Arial, sans-serif" font-size="12" text-anchor="end">2M</text>
+<line x1="75" y1="539.3" x2="970" y2="539.3" stroke="#dbe3ec"/>
+<text x="65" y="543.2857142857143" fill="#172033" font-family="Arial, sans-serif" font-size="12" text-anchor="end">3M</text>
+<line x1="75" y1="510.7" x2="970" y2="510.7" stroke="#dbe3ec"/>
+<text x="65" y="514.7142857142858" fill="#172033" font-family="Arial, sans-serif" font-size="12" text-anchor="end">4M</text>
+<line x1="75" y1="482.1" x2="970" y2="482.1" stroke="#dbe3ec"/>
+<text x="65" y="486.1428571428571" fill="#172033" font-family="Arial, sans-serif" font-size="12" text-anchor="end">5M</text>
+<line x1="75" y1="453.6" x2="970" y2="453.6" stroke="#dbe3ec"/>
+<text x="65" y="457.57142857142856" fill="#172033" font-family="Arial, sans-serif" font-size="12" text-anchor="end">6M</text>
+<line x1="75" y1="425.0" x2="970" y2="425.0" stroke="#dbe3ec"/>
+<text x="65" y="429.0" fill="#172033" font-family="Arial, sans-serif" font-size="12" text-anchor="end">7M</text>
+<line x1="85" y1="291.3" x2="385" y2="291.3" stroke="#b45309" stroke-width="1.5" stroke-dasharray="6 5"/>
+<line x1="605" y1="156.9" x2="905" y2="156.9" stroke="#b45309" stroke-width="1.5" stroke-dasharray="6 5"/>
+<line x1="130" y1="257.6" x2="130" y2="290.1" stroke="#334155" stroke-width="2"/>
+<line x1="124" y1="257.6" x2="136" y2="257.6" stroke="#334155" stroke-width="2"/>
+<line x1="124" y1="290.1" x2="136" y2="290.1" stroke="#334155" stroke-width="2"/>
+<circle cx="130" cy="275.3" r="7" fill="#334155"/>
+<text x="130" y="249.6443386962912" fill="#334155" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" font-weight="700">14.0%</text>
+<rect x="102" y="486.7" width="56" height="138.3" rx="3" fill="#334155"/>
+<text x="130" y="477.6754020408163" fill="#334155" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" font-weight="700">4.84M</text>
+<text x="130" y="650" fill="#334155" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">SFT</text>
+<line x1="230" y1="268.1" x2="230" y2="298.7" stroke="#2563eb" stroke-width="2"/>
+<line x1="224" y1="268.1" x2="236" y2="268.1" stroke="#2563eb" stroke-width="2"/>
+<line x1="224" y1="298.7" x2="236" y2="298.7" stroke="#2563eb" stroke-width="2"/>
+<circle cx="230" cy="284.9" r="7" fill="#2563eb"/>
+<text x="230" y="260.07748102728544" fill="#2563eb" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" font-weight="700">12.2%</text>
+<rect x="202" y="471.6" width="56" height="153.4" rx="3" fill="#2563eb"/>
+<text x="230" y="462.57663981264636" fill="#2563eb" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" font-weight="700">5.37M</text>
+<text x="230" y="650" fill="#2563eb" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">DMPO</text>
+<line x1="330" y1="271.6" x2="330" y2="301.6" stroke="#059669" stroke-width="2"/>
+<line x1="324" y1="271.6" x2="336" y2="271.6" stroke="#059669" stroke-width="2"/>
+<line x1="324" y1="301.6" x2="336" y2="301.6" stroke="#059669" stroke-width="2"/>
+<circle cx="330" cy="288.1" r="7" fill="#059669"/>
+<text x="330" y="263.5776869528351" fill="#059669" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" font-weight="700">11.6%</text>
+<rect x="302" y="443.9" width="56" height="181.1" rx="3" fill="#059669"/>
+<text x="330" y="434.87721379310346" fill="#059669" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" font-weight="700">6.34M</text>
+<text x="330" y="650" fill="#059669" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">DMPO→DEPO</text>
+<line x1="650" y1="117.8" x2="650" y2="163.2" stroke="#334155" stroke-width="2"/>
+<line x1="644" y1="117.8" x2="656" y2="117.8" stroke="#334155" stroke-width="2"/>
+<line x1="644" y1="163.2" x2="656" y2="163.2" stroke="#334155" stroke-width="2"/>
+<circle cx="650" cy="140.9" r="7" fill="#334155"/>
+<text x="650" y="109.7549441333247" fill="#334155" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" font-weight="700">39.2%</text>
+<rect x="622" y="536.3" width="56" height="88.7" rx="3" fill="#334155"/>
+<text x="650" y="527.2866897959184" fill="#334155" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" font-weight="700">3.10M</text>
+<text x="650" y="650" fill="#334155" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">SFT</text>
+<line x1="750" y1="132.9" x2="750" y2="177.7" stroke="#2563eb" stroke-width="2"/>
+<line x1="744" y1="132.9" x2="756" y2="132.9" stroke="#2563eb" stroke-width="2"/>
+<line x1="744" y1="177.7" x2="756" y2="177.7" stroke="#2563eb" stroke-width="2"/>
+<circle cx="750" cy="155.9" r="7" fill="#2563eb"/>
+<text x="750" y="124.90006150047157" fill="#2563eb" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" font-weight="700">36.4%</text>
+<rect x="722" y="534.3" width="56" height="90.7" rx="3" fill="#2563eb"/>
+<text x="750" y="525.2509237048665" fill="#2563eb" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" font-weight="700">3.18M</text>
+<text x="750" y="650" fill="#2563eb" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">DMPO</text>
+<line x1="850" y1="119.9" x2="850" y2="165.3" stroke="#059669" stroke-width="2"/>
+<line x1="844" y1="119.9" x2="856" y2="119.9" stroke="#059669" stroke-width="2"/>
+<line x1="844" y1="165.3" x2="856" y2="165.3" stroke="#059669" stroke-width="2"/>
+<circle cx="850" cy="143.1" r="7" fill="#059669"/>
+<text x="850" y="111.91369444622183" fill="#059669" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" font-weight="700">38.8%</text>
+<rect x="822" y="538.4" width="56" height="86.6" rx="3" fill="#059669"/>
+<text x="850" y="529.3793961708395" fill="#059669" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" font-weight="700">3.03M</text>
+<text x="850" y="650" fill="#059669" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">DMPO→DEPO</text>
+<text x="230" y="380" fill="#172033" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" font-weight="700">SWE-smith confirmation</text>
+<text x="750" y="380" fill="#172033" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" font-weight="700">SWE-bench Verified</text>
+<text x="230" y="680" fill="#172033" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" font-weight="700">SWE-smith confirmation</text>
+<text x="750" y="680" fill="#172033" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" font-weight="700">SWE-bench Verified</text>
+</svg>

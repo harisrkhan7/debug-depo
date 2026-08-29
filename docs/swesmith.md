@@ -11,16 +11,25 @@ scripts/install_mini_swe_agent_plus.sh
 scripts/install_swesmith.sh
 ```
 
-The tracked pilot settings are:
+The completed preference-training collection used by the DMPO and DEPO runs is:
 
 ```text
 dataset:          SWE-bench/SWE-smith-py (train)
-pilot tasks:      30
+training tasks:   1,000
 temperatures:     0.6, 0.7
-runs/temperature: 4
-total runs/task:  8
+runs/temperature: 2
+total runs/task:  4
 base seed:        42
 ```
+
+This is the `swesmith-train-1000-r2` collection represented by samples `0`--`3`.
+All four evaluated trajectories per task were supplied to the preference-data
+builders.
+
+The earlier `swesmith-pilot-20260719` experiment was different: it covered 30
+tasks with four runs at each temperature, or eight trajectories per task. Those
+are historical pilot settings and do not describe the subsequent 1,000-task
+DMPO/DEPO training collection.
 
 Each task/sample pair has a stable derived seed and a separate prediction file,
 so duplicate task IDs are never collapsed.

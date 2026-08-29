@@ -126,11 +126,13 @@ recorded, and resume trims observations newer than the selected checkpoint.
 The current experiment collects SWE-smith trajectories with a 32,768-token
 context, tests packaged models on SWE-bench Verified with a 65,536-token
 context, and trains with `MAX_LENGTH=8192`. Set these limits explicitly when
-reproducing an experiment. The builders
-select four temperature-balanced slots per task: `0,1,4,5` for the current
-two-temperature layout or `0,4,8,12` for four temperatures. Override with
-`PREFERENCE_SAMPLE_INDICES`, or set `PREFERENCE_MAX_ROLLOUTS=0` for all
-rollouts.
+reproducing an experiment. The completed `swesmith-train-1000-r2` collection
+contains four slots per task (`0,1,2,3`), and the builders used all four. For a
+larger collection, the default remains a temperature-balanced subset of four:
+for example, `0,1,4,5` with two temperatures and four runs per temperature, or
+`0,4,8,12` with four temperatures and four runs per temperature. Override with
+`PREFERENCE_SAMPLE_INDICES`, or set `PREFERENCE_MAX_ROLLOUTS=0` to use every
+rollout.
 
 Common training overrides include `MAX_TRAIN_ROWS`, `NUM_PROCESSES`,
 `PER_DEVICE_BATCH_SIZE`, `GRADIENT_ACCUMULATION_STEPS`, `EPOCHS`,

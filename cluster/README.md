@@ -182,8 +182,11 @@ DRY_RUN=1 cluster/submit_swesmith_full.sh
 cluster/submit_swesmith_full.sh
 ```
 
-The SWE-smith wrapper collects eight rollouts per task: four at temperature 0.6
-and four at 0.7. For the balanced confirmatory membership:
+The SWE-smith cluster wrapper defaults to eight rollouts per task: four at
+temperature 0.6 and four at 0.7. This is a configurable wrapper default, not the
+setting used for the completed `swesmith-train-1000-r2` preference collection,
+which used two runs at each temperature. For the balanced confirmatory
+membership:
 
 ```bash
 RUN_NAME=swesmith-validation-500 \
@@ -227,7 +230,7 @@ DRY_RUN=1 \
 Use `EXPERIMENT_ARM=dmpo` or `depo` for one branch. Trial names isolate
 manifests, checkpoints, packages, and evaluations. See
 [preference training](../docs/preference-training.md) and
-[hyperparameter sweeps](../docs/hyperparameter-sweep.md) for experiment
+[hyperparameter sweeps](../docs/hyperparameter-sweep-light.md) for experiment
 settings.
 
 ## Transfer and configuration

@@ -24,7 +24,7 @@ project. All files were generated from dataset revision
 - `swesmith_validation_100_instance_ids.txt` and
   `swesmith_validation_200_instance_ids.txt`: deterministic nested screening
   budgets for the DMPO/DEPO
-  [hyperparameter sweep](../../docs/hyperparameter-sweep.md). Both
+  [hyperparameter sweep](../../docs/hyperparameter-sweep-light.md). Both
   cover all 13 eligible validation repository snapshots, and the 100-task
   sample is a subset of the 200-task sample.
 - `swesmith_validation_confirmatory_balanced_500_instance_ids.txt`: the fixed

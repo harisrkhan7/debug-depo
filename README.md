@@ -10,9 +10,9 @@ lightweight Mac smoke tests and full HPC runs.
 | Workflow | Purpose | Guide |
 | --- | --- | --- |
 | SWE-bench Verified | Reproduce the pinned 38.2% (191/500) AgentForge target | [SWE-bench workflow](docs/swebench.md) |
-| SWE-smith | Collect eight reproducible trajectories per task and evaluate them | [SWE-smith workflow](docs/swesmith.md) |
+| SWE-smith | Collect and evaluate reproducible repeated trajectories per task | [SWE-smith workflow](docs/swesmith.md) |
 | DMPO and DEPO | Build immutable preference data, train models, and compare validation efficiency | [Preference-training workflow](docs/preference-training.md) |
-| Hyperparameter sweep | Screen DMPO/DEPO trials, then run disjoint confirmatory validation | [Sweep protocol](docs/hyperparameter-sweep.md) |
+| Hyperparameter sweep | Screen DMPO/DEPO trials, then run disjoint confirmatory validation | [Sweep protocol](docs/hyperparameter-sweep-light.md) |
 | Research plan | Track the objective, pilot findings, implementation coverage, and references | [Preference-optimization notes](docs/preference-optimization.md) |
 | HPC | Configure storage, Apptainer, vLLM, PBS resources, and submission chains | [Cluster guide](cluster/README.md) |
 | Lambda Cloud | Run the same workflows on one 4- or 8-GPU VM | [Cloud guide](cloud/README.md) |

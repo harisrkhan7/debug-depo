@@ -130,9 +130,12 @@ RUN_NAME=agentforge-verified-cloud bash cloud/run.sh pipeline verified
 RUN_NAME=swesmith-train-1000 bash cloud/run.sh pipeline swesmith
 ```
 
-The Verified default covers all 500 tasks. The SWE-smith default covers the
-tracked 1,000-task training split and collects eight rollouts per task: four at
-0.6 and four at 0.7. Resume or run stages separately with the same `RUN_NAME`:
+The Verified default covers all 500 tasks. A bare SWE-smith pipeline invocation
+uses the tracked 1,000-task training split and the generic eight-rollout default:
+four at 0.6 and four at 0.7. The completed `swesmith-train-1000-r2` preference
+collection instead used `cloud/trajectory_suite.sh`, which explicitly selected
+two runs at each temperature, or four trajectories per task. Resume or run
+stages separately with the same `RUN_NAME`:
 
 ```bash
 RUN_NAME=agentforge-verified-cloud bash cloud/run.sh collect verified
@@ -178,7 +181,7 @@ DEPO_TRIAL_NAME=alpha2 \
 
 Use `dmpo` or `depo` instead of `train` for one stage. Keep distinct trial
 names for independent outputs. See [preference training](../docs/preference-training.md)
-and [hyperparameter sweeps](../docs/hyperparameter-sweep.md).
+and [hyperparameter sweeps](../docs/hyperparameter-sweep-light.md).
 
 ## Validation and final testing
 

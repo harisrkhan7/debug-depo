@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 560" role="img" aria-labelledby="title desc">
+<title id="title">SWE-smith screening trade-off</title>
+<desc id="desc">Resolution rate against total tokens per resolved task for the seven screened arms.</desc>
+<rect width="100%" height="100%" fill="white"/>
+<text x="95" y="34" fill="#172033" font-family="Arial, sans-serif" font-size="22" font-weight="700">200-task SWE-smith screening</text>
+<text x="95" y="57" fill="#536176" font-family="Arial, sans-serif" font-size="13">Preferred direction is upper-left; filled points mark SFT and the promoted candidates.</text>
+<line x1="95.0" y1="75" x2="95.0" y2="480" stroke="#dbe3ec"/>
+<text x="95.0" y="505" fill="#172033" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">4.5</text>
+<line x1="216.4" y1="75" x2="216.4" y2="480" stroke="#dbe3ec"/>
+<text x="216.42857142857142" y="505" fill="#172033" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">5</text>
+<line x1="337.9" y1="75" x2="337.9" y2="480" stroke="#dbe3ec"/>
+<text x="337.85714285714283" y="505" fill="#172033" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">5.5</text>
+<line x1="459.3" y1="75" x2="459.3" y2="480" stroke="#dbe3ec"/>
+<text x="459.2857142857143" y="505" fill="#172033" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">6</text>
+<line x1="580.7" y1="75" x2="580.7" y2="480" stroke="#dbe3ec"/>
+<text x="580.7142857142857" y="505" fill="#172033" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">6.5</text>
+<line x1="702.1" y1="75" x2="702.1" y2="480" stroke="#dbe3ec"/>
+<text x="702.1428571428571" y="505" fill="#172033" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">7</text>
+<line x1="823.6" y1="75" x2="823.6" y2="480" stroke="#dbe3ec"/>
+<text x="823.5714285714286" y="505" fill="#172033" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">7.5</text>
+<line x1="945.0" y1="75" x2="945.0" y2="480" stroke="#dbe3ec"/>
+<text x="945.0" y="505" fill="#172033" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">8</text>
+<line x1="95" y1="443.2" x2="945" y2="443.2" stroke="#dbe3ec"/>
+<text x="83" y="447.1818181818182" fill="#172033" font-family="Arial, sans-serif" font-size="12" text-anchor="end">7%</text>
+<line x1="95" y1="369.5" x2="945" y2="369.5" stroke="#dbe3ec"/>
+<text x="83" y="373.54545454545456" fill="#172033" font-family="Arial, sans-serif" font-size="12" text-anchor="end">8%</text>
+<line x1="95" y1="295.9" x2="945" y2="295.9" stroke="#dbe3ec"/>
+<text x="83" y="299.9090909090909" fill="#172033" font-family="Arial, sans-serif" font-size="12" text-anchor="end">9%</text>
+<line x1="95" y1="222.3" x2="945" y2="222.3" stroke="#dbe3ec"/>
+<text x="83" y="226.27272727272728" fill="#172033" font-family="Arial, sans-serif" font-size="12" text-anchor="end">10%</text>
+<line x1="95" y1="148.6" x2="945" y2="148.6" stroke="#dbe3ec"/>
+<text x="83" y="152.63636363636363" fill="#172033" font-family="Arial, sans-serif" font-size="12" text-anchor="end">11%</text>
+<line x1="95" y1="75.0" x2="945" y2="75.0" stroke="#dbe3ec"/>
+<text x="83" y="79.0" fill="#172033" font-family="Arial, sans-serif" font-size="12" text-anchor="end">12%</text>
+<line x1="95" y1="332.7" x2="945" y2="332.7" stroke="#b45309" stroke-width="2" stroke-dasharray="7 6"/>
+<text x="940" y="324.72727272727275" fill="#92400e" font-family="Arial, sans-serif" font-size="12" text-anchor="end">non-inferiority screen: 8.5%</text>
+<circle cx="152.2" cy="111.8" r="8" fill="#334155" fill-opacity="1" stroke="white" stroke-width="2"/>
+<text x="162.22034223602492" y="101.81818181818181" fill="#334155" font-family="Arial, sans-serif" font-size="12" font-weight="700">SFT</text>
+<circle cx="257.1" cy="185.5" r="8" fill="#2563eb" fill-opacity="1" stroke="white" stroke-width="2"/>
+<text x="267.14107346938783" y="173.45454545454544" fill="#2563eb" font-family="Arial, sans-serif" font-size="12" font-weight="700">DMPO γ=0.7</text>
+<circle cx="412.5" cy="259.1" r="6" fill="#2563eb" fill-opacity="0.55" stroke="white" stroke-width="2"/>
+<text x="422.47346616541375" y="279.0909090909091" fill="#2563eb" font-family="Arial, sans-serif" font-size="12" font-weight="400">DMPO γ=0.9</text>
+<circle cx="369.0" cy="222.3" r="6" fill="#2563eb" fill-opacity="0.55" stroke="white" stroke-width="2"/>
+<text x="378.9632692857143" y="212.27272727272728" fill="#2563eb" font-family="Arial, sans-serif" font-size="12" font-weight="400">DMPO γ=0.5</text>
+<circle cx="685.7" cy="332.7" r="6" fill="#059669" fill-opacity="0.55" stroke="white" stroke-width="2"/>
+<text x="567.7169142857143" y="322.72727272727275" fill="#059669" font-family="Arial, sans-serif" font-size="12" font-weight="400">DEPO paper</text>
+<circle cx="840.9" cy="443.2" r="6" fill="#059669" fill-opacity="0.55" stroke="white" stroke-width="2"/>
+<text x="692.8838816326531" y="433.18181818181813" fill="#059669" font-family="Arial, sans-serif" font-size="12" font-weight="400">DEPO completion</text>
+<circle cx="221.5" cy="185.5" r="8" fill="#059669" fill-opacity="1" stroke="white" stroke-width="2"/>
+<text x="231.4981102040818" y="205.45454545454544" fill="#059669" font-family="Arial, sans-serif" font-size="12" font-weight="700">DEPO total</text>
+<line x1="95" y1="480" x2="945" y2="480" stroke="#172033"/>
+<line x1="95" y1="75" x2="95" y2="480" stroke="#172033"/>
+<text x="520.0" y="538" fill="#172033" font-family="Arial, sans-serif" font-size="14" text-anchor="middle">Total tokens per resolved task (millions; lower is better)</text>
+<text x="24" y="277.5" fill="#172033" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" transform="rotate(-90 24 277.5)">Resolution rate (higher is better)</text>
+</svg>

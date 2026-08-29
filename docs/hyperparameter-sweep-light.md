@@ -1,9 +1,11 @@
 # Compute-light DMPO and DEPO hyperparameter sweep
 
-This is a smaller alternative to [the full sweep](hyperparameter-sweep.md). It
-keeps the paper-aligned configurations and tests only a few changes with a clear
-reason. There is no 100-task round and no large learning-rate, beta, or epoch
-grid.
+This document defines the final bounded hyperparameter-search protocol for the
+1,000-task SWE-smith preference-training experiment. It retains the
+paper-aligned configurations and tests only a small number of changes with a
+clear rationale. There is no initial 100-task round and no broad learning-rate,
+beta or epoch grid. The immutable task memberships and sampling policies are
+documented in [Dataset splits](dataset-splits.md).
 
 ## Compute budget
 
@@ -33,9 +35,11 @@ Do not vary these settings:
 | Setting | Value |
 | --- | ---: |
 | Training tasks | 1,000 |
+| Base model | `Kwai-Klear/Klear-AgentForge-8B-SFT` |
 | Collection context length | 32,768 for every rollout |
 | Training sequence length | 8,192 for DMPO and DEPO |
-| Evaluation context length | 65,536 for every arm |
+| Screening evaluation context length | 32,768 for every arm |
+| Confirmatory evaluation context length | 65,536 for every arm |
 | Epochs | 3 |
 | Per-device batch size | 1 |
 | Gradient accumulation | 32 |
@@ -53,10 +57,41 @@ Use the fixed repository split files:
 
 Build the preference data once and reuse it for every trial.
 
+With eight training processes, per-device batch size 1 and gradient
+accumulation 32, the nominal global batch is 256 sequences. Record the actual
+number of DMPO pairs and DEPO trajectories and calculate the approximate update
+count as:
+
+```text
+updates per epoch = ceil(number of training rows / 256)
+```
+
+This makes the limited optimiser-step budget explicit rather than treating
+epochs alone as a measure of training compute.
+
+## Controls and provenance
+
+Before tuning:
+
+1. Build and validate one immutable set of DMPO and DEPO preference artifacts.
+2. Evaluate the unmodified SFT model on the 200-task screening membership.
+3. Give every configuration a unique `DMPO_TRIAL_NAME` or `DEPO_TRIAL_NAME`.
+4. Reuse the preference artifacts for trainer-only comparisons; any change to
+   pair filtering must produce a separately named artifact with its own summary
+   and hash.
+
+At each evaluation stage, keep task membership, temperature, rollout count,
+context length, step limit and scoring pipeline identical across arms.
+
 ## Stage 1: three DMPO trials
 
 Keep the learning rate and beta fixed. Test only `gamma`, the DMPO-specific
-parameter controlling how strongly later agent turns are discounted.
+parameter controlling how strongly later agent turns are discounted. The DMPO
+study searches a wider `beta`/`gamma` range and reports that smaller `gamma` can
+reduce the influence of noisy later actions, whereas larger `gamma` preserves
+more influence from later actions in cleaner trajectories
+([Shi et al., 2024](#references)). The three values below are a narrow local
+comparison rather than a reproduction of that full search.
 
 | Trial | Learning rate | `beta` | `gamma` | Reason |
 | --- | ---: | ---: | ---: | --- |
@@ -73,6 +108,18 @@ three runs are clearly broken.
 Initialize all three trials from the selected DMPO package. Keep
 `DEPO_BETA=0.2`, `DEPO_LEARNING_RATE=2e-5`, and three epochs fixed.
 
+DEPO augments its unpaired desirable/undesirable objective with a
+desirable-only efficiency bonus:
+
+```text
+bonus = alpha_tokens / tokens_per_step + alpha_steps / steps
+```
+
+The paper reports `beta=0.2`, learning rate `2e-5`, three epochs and joint
+coefficients `(2, 2)` for its Qwen2.5-7B experiment
+([Chen et al., 2026](#references)). Its unpaired binary-label foundation follows
+KTO ([Ethayarajh et al., 2024](#references)).
+
 | Trial | Token metric | `alpha_tokens` | `alpha_steps` | Reason |
 | --- | --- | ---: | ---: | --- |
 | `paper-a2-a2` | `completion_tokens` | `2` | `2` | Closest paper-hyperparameter replication |
@@ -82,6 +129,14 @@ Initialize all three trials from the selected DMPO package. Keep
 The first trial is the main paper comparison. The other two answer useful local
 questions without creating a large grid. They are engineering variants, not
 paper settings.
+
+The local coefficients 12 and 600 are rounded scale calibrations from the 111
+successful trajectories in the eight-rollout pilot. With median inverse
+completion-tokens-per-step `0.0071399`, inverse total-tokens-per-step
+`0.00015098`, inverse steps `0.0454545`, and `alpha_steps=2`, equal median bonus
+contributions imply coefficients of approximately 12.7 and 602, respectively.
+This calibration explains the tested scales but does not make them
+paper-derived hyperparameters.
 
 Evaluate all three on the same 200 tasks and select one DMPO-to-DEPO model. Do
 not separately sweep DEPO learning rate or beta.
@@ -96,9 +151,19 @@ subject to resolution_rate >= SFT resolution_rate - 0.03
 ```
 
 On 200 tasks, the success tolerance allows at most six fewer resolved tasks than
-SFT. Reject incomplete or telemetry-incomplete runs. Among eligible models,
-choose the lowest total-token cost per resolved task and inspect the paired step
-and token changes.
+SFT. This is an operational threshold, not a confidence interval. For every
+comparison:
+
+1. Require the exact same instance-ID matrix and complete scoring.
+2. Reject configurations outside the success constraint or with incomplete
+   token or interaction-step telemetry.
+3. Rank eligible configurations by total tokens per resolved task.
+4. Inspect paired prompt-token, completion-token, total-token and
+   interaction-step differences rather than relying only on aggregate means.
+5. Inspect the numbers of SFT successes gained and lost.
+
+When few tasks are resolved, cost per resolution is unstable. Treat small
+differences as screening evidence rather than a precise ranking.
 
 If two runs are effectively tied, choose the simpler paper/default setting
 instead of adding more trials:
@@ -119,9 +184,17 @@ resolved tasks than SFT. Report resolution rate, total tokens per resolved task,
 steps, and gained/lost SFT successes.
 
 The 500-task result is the confirmatory validation result. Do not use it to
-launch a new hyperparameter round.
+launch a new hyperparameter round. Repeated optimisation against a fixed
+validation set increases selection bias ([Cawley and Talbot, 2010](#references)).
 
 ## Command templates
+
+In each new Cloud shell, first load the tracked defaults and local path
+overrides:
+
+```bash
+source cloud/env.sh
+```
 
 DMPO example:
 
@@ -168,9 +241,27 @@ CONTEXT_LENGTH=32768 \
   bash cloud/run.sh validate
 ```
 
-For final validation, change only the unique run name and task file to
-`swesmith_validation_confirmatory_balanced_500_instance_ids.txt`. Keep the
-context, temperature, rollout count, and step limit unchanged.
+For final validation, change the unique run name and task file to
+`swesmith_validation_confirmatory_balanced_500_instance_ids.txt`, and set
+`CONTEXT_LENGTH=65536`. Keep the temperature, rollout count, and step limit
+unchanged.
+
+Compare the completed analysis matrices with the repository command, adapting
+the arm list and expected count to the stage:
+
+```bash
+"$UV" run debug-depo-compare-preference-arms \
+  --baseline sft=<sft-run>/analysis/rollouts.csv \
+  --arm dmpo=<dmpo-run>/analysis/rollouts.csv \
+  --arm dmpo-depo=<depo-run>/analysis/rollouts.csv \
+  --expected-tasks 200 \
+  --success-tolerance 0.03 \
+  --output results/preference-sweep-200.json
+```
+
+The command rejects duplicate or mismatched task matrices, unscored outcomes,
+inconsistent resolution labels, and missing token or step telemetry. Retain the
+comparison output alongside the trial configurations and immutable data hashes.
 
 ## Summary
 
@@ -284,3 +375,38 @@ GRADIENT_ACCUMULATION_STEPS=16 \
 EPOCHS=2 \
   bash cloud/run.sh depo
 ```
+
+## Research-backed and local choices
+
+| Choice | Evidence status |
+| --- | --- |
+| DMPO turn weighting and tuning `beta`/`gamma` | DMPO paper and authors' implementation |
+| Smaller `gamma` for noisier losing trajectories | DMPO paper finding |
+| Unpaired desirable/undesirable foundation | KTO paper |
+| Desirable-only inverse token/step bonus | DEPO paper |
+| DEPO `beta=0.2`, LR `2e-5`, three epochs and coefficients `(2, 2)` | DEPO paper experiment |
+| Gamma values `0.5`, `0.7`, `0.9` | Narrow local comparison |
+| Completion-balanced `(12, 2)` | Local pilot-scale calibration |
+| Total-balanced `(600, 2)` | Local total-token objective and pilot-scale calibration |
+| One 200-task screen followed by 500-task confirmation | Local compute-budget design |
+| Three-percentage-point success tolerance | Local operational constraint |
+| Remaining-budget follow-up trials | Post-hoc engineering tests; not fresh confirmation |
+
+## References
+
+1. Wentao Shi, Mengqi Yuan, Junkang Wu, Qifan Wang, and Fuli Feng. 2024.
+   [Direct Multi-Turn Preference Optimization for Language
+   Agents](https://aclanthology.org/2024.emnlp-main.138/). EMNLP 2024. See also
+   the authors' [official implementation](https://github.com/swt-user/DMPO/blob/main/fastchat/train/dmpo_trainer_efficient.py).
+2. Kawin Ethayarajh, Winnie Xu, Niklas Muennighoff, Dan Jurafsky, and Douwe
+   Kiela. 2024. [Model Alignment as Prospect Theoretic
+   Optimization](https://proceedings.mlr.press/v235/ethayarajh24a.html).
+   ICML 2024.
+3. Sirui Chen, Mengshi Zhao, Lei Xu, Yuying Zhao, Beier Zhu, Hanwang Zhang,
+   Shengjie Zhao, and Chaochao Lu. 2026. [DEPO: Dual-Efficiency Preference
+   Optimization for LLM
+   Agents](https://ojs.aaai.org/index.php/AAAI/article/view/40279). AAAI 2026,
+   40(36):30279--30287.
+4. Gavin C. Cawley and Nicola L. C. Talbot. 2010. [On Over-fitting in Model
+   Selection and Subsequent Selection Bias in Performance
+   Evaluation](https://www.jmlr.org/papers/v11/cawley10a.html). JMLR 11.

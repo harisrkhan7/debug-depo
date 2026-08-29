@@ -713,6 +713,17 @@ def _redacted_trajectory_config(config: AgentForgeConfig) -> dict[str, Any]:
     return json_safe(payload)
 
 
+def _redacted_trajectory_config(config: AgentForgeConfig) -> dict[str, Any]:
+    payload = asdict(config)
+    secret = config.llm_api_key
+    if secret:
+        payload["llm_api_key"] = REDACTED_SECRET
+        command_template = payload.get("command")
+        if isinstance(command_template, str):
+            payload["command"] = command_template.replace(secret, REDACTED_SECRET)
+    return json_safe(payload)
+
+
 def run_mock_agentforge(
     instance: dict[str, Any],
     instance_dir: Path,

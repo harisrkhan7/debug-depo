@@ -188,7 +188,9 @@ Only assistant-action tokens contribute to either loss. The system prompt and
 environment/user observations remain in the context so the model can condition
 on them, but their loss weights are zero. DMPO additionally applies the turn
 weights `phi(t, T)`; DEPO gives all assistant turns weight 1. In this setup,
-both algorithms use `MAX_LENGTH=8192` (an 8K-token training sequence limit).
+the completed experiment explicitly used `MAX_LENGTH=8192` (an 8K-token
+training sequence limit). The reusable scripts default to 32,768 unless the
+experiment command overrides it.
 
 The main script defaults are three epochs, batch size 1 with gradient
 accumulation 32, and LoRA rank 64. The important objective defaults are

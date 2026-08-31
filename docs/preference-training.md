@@ -1,8 +1,41 @@
 # DMPO and DEPO workflow
 
 See the [project README](../README.md) for an overview and workflow index, and
-the [optimization notes](preference-optimization.md) for the research
-rationale, pilot findings, implementation status, and references.
+the [training-method explanation](depo-dmpo-model-training.md) for the data and
+loss definitions. The [optimization notes](preference-optimization.md) preserve
+the historical rationale; the [results](hyperparameter-sweep-results.md) report
+the completed experiment.
+
+## Completed Lambda workflow
+
+The main experiment used the 1,000-task `swesmith-train-1000-r2` collection on
+Lambda Cloud. From a configured VM, build and validate the immutable preference
+data, then run the selected DMPO and sequential DEPO stages:
+
+```bash
+RUN_NAME=swesmith-train-1000-r2 bash cloud/run.sh preference-data
+RUN_NAME=swesmith-train-1000-r2 bash cloud/run.sh validate-data
+
+RUN_NAME=swesmith-train-1000-r2 \
+EXPERIMENT_ARM=dmpo \
+DMPO_TRIAL_NAME=g07-paper-informed \
+MAX_LENGTH=8192 \
+  bash cloud/run.sh dmpo
+
+RUN_NAME=swesmith-train-1000-r2 \
+EXPERIMENT_ARM=dmpo-depo \
+DMPO_TRIAL_NAME=g07-paper-informed \
+DEPO_TRIAL_NAME=total-balanced \
+DEPO_TOKEN_METRIC=total_tokens \
+ALPHA_TOKENS=600 \
+ALPHA_STEPS=2 \
+MAX_LENGTH=8192 \
+  bash cloud/run.sh depo
+```
+
+See the [Lambda guide](../cloud/README.md) for setup, storage, recovery, and
+validation commands, and the [sweep protocol](hyperparameter-sweep-light.md)
+for every fixed and varied setting.
 
 ## Build preference data
 
@@ -25,13 +58,13 @@ b(trajectory) =
   + alpha2 * inverse_steps
 ```
 
-Build both datasets:
+Build both datasets directly from any evaluated run root:
 
 ```bash
-RUN_ROOT=scratch/cluster-artifacts/runs/swesmith-pilot-20260719 \
+RUN_ROOT=/path/to/evaluated-run \
   scripts/build_dmpo_pairs.sh
 
-RUN_ROOT=scratch/cluster-artifacts/runs/swesmith-pilot-20260719 \
+RUN_ROOT=/path/to/evaluated-run \
   scripts/build_depo_data.sh
 ```
 
@@ -50,21 +83,20 @@ Outputs:
 On PBS:
 
 ```bash
-RUN_NAME=swesmith-pilot-20260719 DRY_RUN=1 \
+RUN_NAME=your-evaluated-swesmith-run DRY_RUN=1 \
   cluster/submit_preference_data.sh
-RUN_NAME=swesmith-pilot-20260719 \
+RUN_NAME=your-evaluated-swesmith-run \
   cluster/submit_preference_data.sh
 ```
 
 The two independent CPU jobs may overlap. Outputs are published atomically
 with row counts and SHA-256 hashes. Complete artifacts are reused; set
 `REBUILD_PREFERENCE_DATA=1` only for intentional replacement. Build once per
-trajectory collection, including the eventual 5K run, then train in reuse
-mode.
+trajectory collection, then train in reuse mode.
 
 ## Train and package models
 
-Install the optional GPU stack after `cluster/setup_rollout_env.sh`:
+On PBS, install the optional GPU stack after `cluster/setup_rollout_env.sh`:
 
 ```bash
 bash cluster/setup_training_env.sh
@@ -87,10 +119,10 @@ The direct scripts start from baseline SFT, resume their latest complete
 model:
 
 ```bash
-RUN_ROOT=scratch/cluster-artifacts/runs/swesmith-pilot-20260719 \
+RUN_ROOT=/path/to/evaluated-run \
   scripts/train_dmpo.sh
 
-RUN_ROOT=scratch/cluster-artifacts/runs/swesmith-pilot-20260719 \
+RUN_ROOT=/path/to/evaluated-run \
   scripts/train_depo.sh
 ```
 
@@ -142,17 +174,17 @@ Common training overrides include `MAX_TRAIN_ROWS`, `NUM_PROCESSES`,
 `DEPO_BETA`; shared batch, epoch, save, context, and alpha settings go to both
 jobs.
 
-## Cluster workflow
+## PBS workflow
 
 Build data once, then train and inspect DMPO:
 
 ```bash
-RUN_NAME=swesmith-pilot-20260719 \
+RUN_NAME=your-evaluated-swesmith-run \
   cluster/submit_preference_data.sh
 
-RUN_NAME=swesmith-pilot-20260719 \
+RUN_NAME=your-evaluated-swesmith-run \
 EXPERIMENT_ARM=dmpo \
-DMPO_TRIAL_NAME=gamma07 \
+DMPO_TRIAL_NAME=your-dmpo-trial \
 MAX_LENGTH=8192 \
 EVAL_CONTEXT_LENGTH=65536 \
 cluster/submit_preference_training.sh
@@ -161,11 +193,11 @@ cluster/submit_preference_training.sh
 After selecting its package, train DEPO from that DMPO model:
 
 ```bash
-RUN_NAME=swesmith-pilot-20260719 \
+RUN_NAME=your-evaluated-swesmith-run \
 EXPERIMENT_ARM=dmpo-depo \
 DMPO_MODE=reuse \
-DMPO_TRIAL_NAME=gamma07 \
-DEPO_TRIAL_NAME=alpha2 \
+DMPO_TRIAL_NAME=your-dmpo-trial \
+DEPO_TRIAL_NAME=your-depo-trial \
 MAX_LENGTH=8192 \
 EVAL_CONTEXT_LENGTH=65536 \
 cluster/submit_preference_training.sh
@@ -197,14 +229,14 @@ Preview independent held-out evaluation:
 ```bash
 PREFERENCE_OBJECTIVE=dmpo \
 EXPERIMENT_ARM=dmpo \
-TRAIN_RUN_NAME=swesmith-train-5000 \
+TRAIN_RUN_NAME=your-evaluated-swesmith-run \
 EVAL_CONTEXT_LENGTH=65536 \
 DRY_RUN=1 \
 cluster/submit_preference_evaluation.sh
 
 PREFERENCE_OBJECTIVE=depo \
 EXPERIMENT_ARM=dmpo-depo \
-TRAIN_RUN_NAME=swesmith-train-5000 \
+TRAIN_RUN_NAME=your-evaluated-swesmith-run \
 EVAL_CONTEXT_LENGTH=65536 \
 DRY_RUN=1 \
 cluster/submit_preference_evaluation.sh
@@ -230,10 +262,11 @@ Step, prompt-token, completion-token, and total-token telemetry are all strict
 by default; `--allow-incomplete-telemetry` is reserved for exploratory
 summaries.
 
-The guarded workflow in `notebooks/cluster_preference_training.ipynb` uses 64
+The historical
+[PBS pilot notebook](../notebooks/cluster_preference_training.ipynb) uses 64
 rows, an 8K context, one epoch, and a tracked five-task evaluation split for
-the 30-task pilot. It is also linked from
-`notebooks/cluster_agentforge_swesmith_train.ipynb`.
+the 30-task pilot. The [notebook index](../notebooks/README.md) distinguishes
+the current helpers from historical and proposed workflows.
 
 See the [cluster guide](../cluster/README.md) for resource sizing and complete
 PBS dependency behavior.

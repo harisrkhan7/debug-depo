@@ -1,7 +1,8 @@
 # Experiment results
 
 This directory contains the frozen inputs used to generate
-`docs/hyperparameter-sweep-results.md` and its figures.
+the [results and discussion](../docs/hyperparameter-sweep-results.md) and its
+figures.
 
 - `generate-hyperparameter-results.py`: reproducible analysis and figure
   generator.

@@ -175,18 +175,19 @@ DRY_RUN=1 cluster/submit_verified_full.sh
 cluster/submit_verified_full.sh
 ```
 
-Run the tracked 5,000-task SWE-smith training membership:
+Preview or run the default 1,000-task SWE-smith membership:
 
 ```bash
 DRY_RUN=1 cluster/submit_swesmith_full.sh
 cluster/submit_swesmith_full.sh
 ```
 
-The SWE-smith cluster wrapper defaults to eight rollouts per task: four at
-temperature 0.6 and four at 0.7. This is a configurable wrapper default, not the
-setting used for the completed `swesmith-train-1000-r2` preference collection,
-which used two runs at each temperature. For the balanced confirmatory
-membership:
+This PBS default mirrors the completed experiment's task and rollout settings
+for reproducibility, but the completed `swesmith-train-1000-r2` run itself was
+executed on Lambda Cloud, not PBS.
+
+The SWE-smith cluster wrapper defaults to four rollouts per task: two at
+temperature 0.6 and two at 0.7. For the balanced confirmatory membership:
 
 ```bash
 RUN_NAME=swesmith-validation-500 \
@@ -211,17 +212,17 @@ data:
 
 ```bash
 bash cluster/setup_training_env.sh
-RUN_NAME=<evaluated-swesmith-run> DRY_RUN=1 \
+RUN_NAME=your-evaluated-swesmith-run DRY_RUN=1 \
   cluster/submit_preference_data.sh
 ```
 
 Preview DMPO followed by DEPO:
 
 ```bash
-RUN_NAME=<evaluated-swesmith-run> \
+RUN_NAME=your-evaluated-swesmith-run \
 EXPERIMENT_ARM=dmpo-depo \
-DMPO_TRIAL_NAME=<dmpo-trial> \
-DEPO_TRIAL_NAME=<depo-trial> \
+DMPO_TRIAL_NAME=your-dmpo-trial \
+DEPO_TRIAL_NAME=your-depo-trial \
 PREFERENCE_DATA_MODE=reuse \
 DRY_RUN=1 \
   cluster/submit_preference_training.sh

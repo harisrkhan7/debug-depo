@@ -2,43 +2,46 @@
 
 Utilities for reproducing this project's pinned Klear AgentForge 8B SFT result
 on SWE-bench Verified, collecting and evaluating SWE-smith trajectories, and
-training DMPO and DEPO efficiency-preference models. The same code supports
-lightweight Mac smoke tests and full HPC runs.
+training DMPO and DEPO efficiency-preference models. The code can be run on a
+local MacBook, a Lambda Cloud VM, or a PBS cluster.
 
 ## Workflows
 
 | Workflow | Purpose | Guide |
 | --- | --- | --- |
+| Completed results | Compare SFT, DMPO, and DMPO-to-DEPO on SWE-smith and SWE-bench Verified | [Results and discussion](docs/hyperparameter-sweep-results.md) |
 | SWE-bench Verified | Reproduce the pinned 38.2% (191/500) AgentForge target | [SWE-bench workflow](docs/swebench.md) |
 | SWE-smith | Collect and evaluate reproducible repeated trajectories per task | [SWE-smith workflow](docs/swesmith.md) |
 | DMPO and DEPO | Build immutable preference data, train models, and compare validation efficiency | [Preference-training workflow](docs/preference-training.md) |
+| Training method | Understand the DMPO and DEPO data construction and losses | [DMPO/DEPO explanation](docs/depo-dmpo-model-training.md) |
+| Dataset design | Reproduce the repository-disjoint training, screening, and confirmation sets | [Dataset splits](docs/dataset-splits.md) |
 | Hyperparameter sweep | Screen DMPO/DEPO trials, then run disjoint confirmatory validation | [Sweep protocol](docs/hyperparameter-sweep-light.md) |
-| Research plan | Track the objective, pilot findings, implementation coverage, and references | [Preference-optimization notes](docs/preference-optimization.md) |
-| HPC | Configure storage, Apptainer, vLLM, PBS resources, and submission chains | [Cluster guide](cluster/README.md) |
-| Lambda Cloud | Run the same workflows on one 4- or 8-GPU VM | [Cloud guide](cloud/README.md) |
+| Historical design notes | Review the objective, pilot findings, and pre-experiment rationale | [Preference-optimization notes](docs/preference-optimization.md) |
 
-The Verified target is pinned to
+The published Verified reproduction target is 38.2% (191/500). The completed
+experiment's SFT baseline resolved 196/500 (39.2%); see the
+[results](docs/hyperparameter-sweep-results.md#swe-bench-verified-test-results).
+Both use the dataset pinned to
 `princeton-nlp/SWE-bench_Verified@c104f840cc67f8b6eec6f759ebc8b2693d585d4a`,
 split `test`, with 500 instances, a 200-step budget, and a 64K context. The
 wrapper installs the official `mini-swe-agent-plus` scaffold; it does not
 vendor the Kwai/Klear harness.
 
-## Quick start
+## Where to run
 
-Install the development environment and refresh the expected local structure:
+### 1. Local MacBook
+
+Use the local path for development and lightweight smoke tests. Install the
+development environment and run a one-task test without a model or Docker:
 
 ```bash
 uv sync --extra dev
 ./setup.sh
-```
-
-Run a one-task artifact smoke test without a model or Docker:
-
-```bash
 MOCK=1 LIMIT=1 scripts/collect_rollouts.sh
 ```
 
-To run the official harness:
+For a model-backed smoke test, install the official harness and start a local
+MLX server:
 
 ```bash
 scripts/install_mini_swe_agent_plus.sh
@@ -59,7 +62,7 @@ LIMIT=1 \
 scripts/collect_rollouts.sh
 ```
 
-For official SWE-bench scoring on a Docker-capable machine:
+Official SWE-bench scoring also requires Docker:
 
 ```bash
 uv sync --extra dev --extra swebench
@@ -70,38 +73,33 @@ The [SWE-bench guide](docs/swebench.md) covers the local server check, exact
 target model, custom harness contract, outputs, resume validation, sharding, and
 dataset overrides.
 
-## SWE-smith and preference training
+### 2. Lambda Cloud VM
 
-Install SWE-smith and run the two-task artifact smoke test:
-
-```bash
-scripts/install_swesmith.sh
-MOCK=1 MOCK_PATCH=gold LIMIT=2 scripts/collect_swesmith.sh
-```
-
-Preview the tracked 30-task pilot:
+Lambda Cloud—not PBS—was used for the completed 1,000-task main experiment:
+trajectory collection, evaluation, preference training, and final validation.
+On a configured VM, start with a smoke test before launching a full pipeline:
 
 ```bash
-DRY_RUN=1 cluster/submit_swesmith_pilot.sh
+bash cloud/run.sh smoke swesmith
+RUN_NAME=your-run-name bash cloud/run.sh pipeline swesmith
 ```
 
-After collection and evaluation, build preference data and preview training:
+See the [Lambda Cloud guide](cloud/README.md) for VM setup, storage, caching,
+training, recovery, and the exact experiment commands.
+
+### 3. PBS cluster
+
+The PBS path was used mainly for early code development and smoke testing; it
+was not used for the completed 1,000-task experiment. It runs the same
+workflows through scheduled jobs, arrays, and dependency chains:
 
 ```bash
-RUN_NAME=swesmith-pilot-20260719 \
-  cluster/submit_preference_data.sh
-
-RUN_NAME=swesmith-pilot-20260719 \
-EXPERIMENT_ARM=dmpo \
-DMPO_TRIAL_NAME=gamma07 \
-DRY_RUN=1 \
-cluster/submit_preference_training.sh
+DRY_RUN=1 cluster/submit_swesmith_smoke.sh
+cluster/submit_swesmith_smoke.sh
 ```
 
-The tracked full SWE-smith sample contains 5,000 repository-disjoint training
-tasks; the held-out sample contains 500 validation tasks. Exact memberships,
-hashes, and generation policy are documented in
-[`data/splits/README.md`](data/splits/README.md).
+See the [PBS cluster guide](cluster/README.md) for environment setup, storage,
+Apptainer images, resource requests, and submission commands.
 
 ## Reproducibility and recovery
 
@@ -129,6 +127,17 @@ docs/             Workflow and research notes
 tests/            Unit and submission-contract tests
 ```
 
-Start with the workflow-specific guide above. Before any cluster submission,
-review `DRY_RUN=1` output and adapt the site-specific queues, modules,
-walltimes, and scratch paths described in the [cluster guide](cluster/README.md).
+Use the [notebook index](notebooks/README.md) to distinguish current local
+helpers, maintained PBS references, and historical/proposed notebooks. Before
+any cluster submission, review `DRY_RUN=1` output and adapt the site-specific
+queues, modules, walltimes, and scratch paths described in the
+[cluster guide](cluster/README.md).
+
+## AI Usage Statement
+
+- Generative AI was used to improve code documentation, grammar, and tables.
+- Tests were written by the author, with generative AI used for advice on test
+  coverage and limited syntax assistance.
+- Coding assistance was used to improve code syntax.
+- The results-generation script contains some AI-generated code for producing
+  publication-quality images.

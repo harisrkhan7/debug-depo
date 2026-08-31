@@ -13,6 +13,8 @@ case "$MODE" in
     NUM_SHARDS=1
     DEFAULT_ROLLOUT_WORKERS=2
     DEFAULT_EVAL_MAX_WORKERS=2
+    DEFAULT_TASK_IDS_FILE=""
+    DEFAULT_RUNS_PER_TEMPERATURE=4
     COLLECTION_PBS="cluster/pbs/collect_swesmith_smoke.pbs"
     EVALUATION_PBS="cluster/pbs/evaluate_swesmith_smoke.pbs"
     ANALYSIS_PBS="cluster/pbs/analyze_swesmith.pbs"
@@ -25,6 +27,8 @@ case "$MODE" in
     NUM_SHARDS="${NUM_SHARDS:-3}"
     DEFAULT_ROLLOUT_WORKERS=5
     DEFAULT_EVAL_MAX_WORKERS=12
+    DEFAULT_TASK_IDS_FILE=""
+    DEFAULT_RUNS_PER_TEMPERATURE=4
     COLLECTION_PBS="cluster/pbs/collect_swesmith_pilot.pbs"
     EVALUATION_PBS="cluster/pbs/evaluate_swesmith_pilot.pbs"
     ANALYSIS_PBS="cluster/pbs/analyze_swesmith.pbs"
@@ -36,11 +40,13 @@ case "$MODE" in
     if [[ -n "$TASK_LIMIT" ]]; then
       EXPECTED_TASKS="${EXPECTED_TASKS:-$TASK_LIMIT}"
     else
-      EXPECTED_TASKS="${EXPECTED_TASKS:-50908}"
+      EXPECTED_TASKS="${EXPECTED_TASKS:-1000}"
     fi
-    NUM_SHARDS="${NUM_SHARDS:-50}"
+    NUM_SHARDS="${NUM_SHARDS:-10}"
     DEFAULT_ROLLOUT_WORKERS=6
     DEFAULT_EVAL_MAX_WORKERS=25
+    DEFAULT_TASK_IDS_FILE=data/splits/swesmith_train_1000_instance_ids.txt
+    DEFAULT_RUNS_PER_TEMPERATURE=2
     COLLECTION_PBS="cluster/pbs/collect_swesmith_array.pbs"
     EVALUATION_PBS="cluster/pbs/evaluate_swesmith.pbs"
     ANALYSIS_PBS="cluster/pbs/analyze_swesmith_full.pbs"
@@ -55,8 +61,8 @@ esac
 DATASET="${DATASET:-SWE-bench/SWE-smith-py}"
 SWESMITH_DATASET_REVISION="${SWESMITH_DATASET_REVISION:-77cab9055d42ab4a5c25c89a8f937096db13558e}"
 SPLIT="${SPLIT:-train}"
-TASK_IDS_FILE="${TASK_IDS_FILE:-}"
-RUNS_PER_TEMPERATURE="${RUNS_PER_TEMPERATURE:-4}"
+TASK_IDS_FILE="${TASK_IDS_FILE-$DEFAULT_TASK_IDS_FILE}"
+RUNS_PER_TEMPERATURE="${RUNS_PER_TEMPERATURE:-$DEFAULT_RUNS_PER_TEMPERATURE}"
 if [[ ! "$RUNS_PER_TEMPERATURE" =~ ^[1-9][0-9]*$ ]]; then
   echo "RUNS_PER_TEMPERATURE must be a positive integer." >&2
   exit 2
@@ -126,6 +132,9 @@ if [[ -n "$TASK_LIMIT" ]]; then
 fi
 if [[ -n "$TASK_IDS_FILE" ]]; then
   collection_variables+=",TASK_IDS_FILE=$TASK_IDS_FILE"
+  if [[ -z "$TASK_LIMIT" ]]; then
+    evaluation_variables+=",TASK_IDS_FILE=$TASK_IDS_FILE"
+  fi
 fi
 if [[ -n "$MINI_SWE_CONFIG" ]]; then
   collection_variables+=",MINI_SWE_CONFIG=$MINI_SWE_CONFIG"
@@ -189,7 +198,15 @@ fi
 mkdir -p "$CLUSTER_LOG_DIR"
 qsub_log_args=(-o "$CLUSTER_LOG_DIR/" -e "$CLUSTER_LOG_DIR/")
 
-collection_job="$(qsub -N "swesmith-$MODE-collect" "${qsub_log_args[@]}" "${array_args[@]}" "${collection_dependency_args[@]}" -v "$collection_variables" "$COLLECTION_PBS")"
+collection_qsub_args=(-N "swesmith-$MODE-collect" "${qsub_log_args[@]}")
+if ((${#array_args[@]})); then
+  collection_qsub_args+=("${array_args[@]}")
+fi
+if ((${#collection_dependency_args[@]})); then
+  collection_qsub_args+=("${collection_dependency_args[@]}")
+fi
+collection_qsub_args+=(-v "$collection_variables" "$COLLECTION_PBS")
+collection_job="$(qsub "${collection_qsub_args[@]}")"
 echo "Submitted SWE-smith collection: $collection_job"
 if [[ "$SUBMIT_EVAL" == "1" ]]; then
   evaluation_job="$(qsub -N "swesmith-$MODE-eval" "${qsub_log_args[@]}" -W "depend=afterok:$collection_job" -v "$evaluation_variables" "$EVALUATION_PBS")"

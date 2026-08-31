@@ -39,8 +39,10 @@ repository-disjoint memberships are tracked as:
 
 - `data/splits/train_instance_ids.txt`: 45,809 tasks;
 - `data/splits/validation_instance_ids.txt`: 5,099 tasks;
-- derived samples: 5,000 training, 200 screening, and 500 disjoint
-  confirmatory-validation tasks.
+- completed training sample: 1,000 tasks, drawn from the tracked 5,000-task
+  full-scale membership;
+- evaluation samples: 200 screening and 500 disjoint confirmatory-validation
+  tasks.
 
 The pinned revision, policy, repository membership, and hashes are in
 `data/splits/swesmith_py_split_manifest.json`; see the
@@ -72,16 +74,16 @@ exclusion membership is stored in
 `data/splits/swesmith_validation_unavailable_instance_ids.txt` and is supplied
 to the deterministic sampler during regeneration.
 
-Submit the validation sample without changing the upstream split name:
+Validate the SFT model on the confirmatory sample without changing the upstream
+split name:
 
 ```bash
 RUN_NAME=swesmith-validation-500 \
 SPLIT=train \
 TASK_IDS_FILE=data/splits/swesmith_validation_confirmatory_balanced_500_instance_ids.txt \
-EXPECTED_TASKS=500 \
-NUM_SHARDS=100 \
-DRY_RUN=1 \
-cluster/submit_swesmith_full.sh
+AGENTFORGE_MODEL=Kwai-Klear/Klear-AgentForge-8B-SFT \
+CONTEXT_LENGTH=65536 \
+  bash cloud/run.sh validate
 ```
 
 Collection selects tasks once, then sends one local task JSON at a time through
@@ -90,19 +92,33 @@ command checks out the task's SWE-smith branch in its repository image. Use the
 standard `swebench` runner with Docker or the default `singularity` runner;
 mini-swe-agent-plus's `pool_way` runner cannot execute that startup command.
 
-## Artifacts and smoke test
+## Lambda Cloud main experiment
+
+Lambda Cloud was used for the completed multi-GPU collection, evaluation, and
+preference-training experiment. The tracked suite reproduces the four-rollout
+1,000-task collection and the SFT validation budgets:
+
+```bash
+TRAIN_RUN_NAME=swesmith-train-1000-r2 bash cloud/run.sh trajectory-suite
+```
+
+For individual stages, recovery, or a different model, use the
+[Lambda guide](../cloud/README.md) and
+[setup runbook](../cloud/RUNBOOK.md).
+
+## Artifacts and local smoke test
 
 ```text
 <run-root>/
   cluster-logs/
   collection/shard-*/
     collection_manifest.json
-    samples/sample-0/ ... sample-7/
+    samples/sample-<index>/
       predictions.jsonl
       summary.json
       trajectories/<instance-id>/
-  merged/sample-0/ ... sample-7/
-  evaluation/sample-0/ ... sample-7/
+  merged/sample-<index>/
+  evaluation/sample-<index>/
   analysis/
     rollouts.csv
     tasks.csv
@@ -118,7 +134,15 @@ MOCK=1 MOCK_PATCH=gold LIMIT=2 scripts/collect_swesmith.sh
 SWE-smith gold patches introduce bugs, so mock predictions are marked for
 reverse application by the evaluator.
 
-## Cluster submission
+The completed Lambda collection and the equivalent default PBS full
+configuration both have sample indices `0`--`3`; this parity does not imply
+that PBS was used for the completed run.
+
+## PBS cluster workflow
+
+The PBS path was used mainly during early development and for smoke testing,
+not for the completed 1,000-task experiment. It remains available for
+scheduled job arrays and proposed collections.
 
 Preview or submit the tracked modes:
 
@@ -139,11 +163,6 @@ immutable `TASK_IDS_FILE`. In bounded modes, `EXPECTED_TASKS` defaults to
 also rejects an incomplete sample matrix. Cluster logs live under the
 ephemeral run root, not in the repository.
 
-For a direct multi-GPU Lambda VM instead of a scheduler, use the
-[cloud guide](../cloud/README.md) and its
-[setup and recovery runbook](../cloud/RUNBOOK.md). They cover storage,
-credentials, SIF restoration, runtime setup, and replacement-VM resume.
-
 Important reproducibility and recovery behavior:
 
 - The dataset defaults to revision
@@ -155,9 +174,9 @@ Important reproducibility and recovery behavior:
 - Step/context-limit terminations remain model outcomes with empty patches.
   Infrastructure failures fail the shard; reruns retry only failed slots.
 - The full wrapper defaults to
-  `data/splits/swesmith_train_5000_instance_ids.txt`, 5,000 tasks, 50 shards,
-  and six concurrent trajectories per shard. Set `TASK_IDS_FILE` and
-  `EXPECTED_TASKS` together for another subset.
+  `data/splits/swesmith_train_1000_instance_ids.txt`, 1,000 tasks, four
+  rollouts per task, 10 shards, and six concurrent trajectories per shard.
+  Set `TASK_IDS_FILE` and `EXPECTED_TASKS` together for another subset.
 
 On clusters, SWE-smith evaluation uses Apptainer while preserving the official
 repository profiles, tests, and grading. Persistent SIF and cache paths are
@@ -176,7 +195,9 @@ cluster/submit_apptainer_cache_full.sh
 ```
 
 See the [cluster guide](../cluster/README.md) for environment, cache, resource,
-and submission details. Use `notebooks/cluster_agentforge_swesmith.ipynb` for
-the interactive workflow and `notebooks/inspect_swesmith_collection.ipynb` to
-inspect coverage, temperatures, messages, patches, reports, and
+and submission details. Use the
+[interactive PBS notebook](../notebooks/cluster_agentforge_swesmith.ipynb) for
+that workflow and the
+[collection-inspection notebook](../notebooks/inspect_swesmith_collection.ipynb)
+to inspect coverage, temperatures, messages, patches, reports, and
 per-temperature pass@1...4.

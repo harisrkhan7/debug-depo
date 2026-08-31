@@ -1,6 +1,7 @@
 """
-Most of this script was generated using ChatGPT 5.6 Sol Model
-to enhance the quality of the output.
+Most of this script was improved using ChatGPT 5.6 Sol Model
+to enhance the quality of the output. Particularly the syntax
+to generate high quality images.
 
 Reproduce the figures and uncertainty summaries used in the sweep report.
 

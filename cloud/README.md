@@ -47,8 +47,9 @@ filesystems:
 bash cloud/run.sh storage
 ```
 
-For provisioning, credentials, checkout transfer, SIF restoration, and
-replacement-VM recovery, follow the [setup and recovery runbook](RUNBOOK.md).
+For provisioning, credentials, checkout transfer, and SIF restoration, follow
+the [setup runbook](RUNBOOK.md). The completed main collection has a separate
+[`swesmith-train-1000-r2` recovery recipe](RECOVERY_SWESMITH_1000_R2.md).
 For an existing checkout on a configured VM:
 
 ```bash
@@ -146,7 +147,8 @@ RUN_NAME=agentforge-verified-cloud bash cloud/run.sh analyze verified
 A compatible rerun reuses completed trajectories and retries infrastructure
 failures. Use a new run name after changing result-affecting settings. A
 replacement VM must reproduce the existing manifest, especially its shard
-count; see [the recovery runbook](RUNBOOK.md#resume-swesmith-train-1000-r2).
+count; see the
+[`swesmith-train-1000-r2` recovery recipe](RECOVERY_SWESMITH_1000_R2.md).
 
 The reduced SFT suite collects four rollouts for each of 1,000 training tasks,
 then validates the SFT model on the tracked 100-, 200-, and 500-task
@@ -196,7 +198,7 @@ AGENTFORGE_MODEL=Kwai-Klear/Klear-AgentForge-8B-SFT \
   bash cloud/run.sh validate
 
 source cloud/env.sh
-MODEL_DIR="$DEBUG_DEPO_SCRATCH/runs/<training-run>/experiments/dmpo/<trial>/model"
+MODEL_DIR="$DEBUG_DEPO_SCRATCH/runs/your-training-run/experiments/dmpo/your-trial/model"
 RUN_NAME=dmpo-validation-100 \
 TASK_IDS_FILE=data/splits/swesmith_validation_100_instance_ids.txt \
 MODEL_PATH="$MODEL_DIR" \
@@ -221,7 +223,7 @@ model, set both model variables to the same path:
 
 ```bash
 source cloud/env.sh
-MODEL_DIR="$DEBUG_DEPO_SCRATCH/runs/<training-run>/experiments/dmpo/<trial>/model"
+MODEL_DIR="$DEBUG_DEPO_SCRATCH/runs/your-training-run/experiments/dmpo/your-trial/model"
 RUN_NAME=dmpo-evaluation-500 \
 AGENTFORGE_MODEL="$MODEL_DIR" \
 VLLM_MODEL="$MODEL_DIR" \

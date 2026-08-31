@@ -49,7 +49,7 @@ To reuse the pipeline for another immutable dataset role:
 
 ```bash
 DATASET=org/dataset \
-SWEBENCH_DATASET_REVISION=<immutable-dataset-commit> \
+SWEBENCH_DATASET_REVISION=your-immutable-dataset-commit \
 SPLIT=train \
 TASK_IDS_FILE=data/splits/train_instance_ids.txt \
 EXPECTED_COUNT=1000 \
@@ -91,8 +91,8 @@ MOCK=1 MOCK_PATCH=gold LIMIT=1 scripts/collect_rollouts.sh
 scripts/evaluate_all.sh
 ```
 
-See `notebooks/local_agentforge_swebench_smoke.ipynb` for the notebook
-equivalent.
+See the [local smoke notebook](../notebooks/local_agentforge_swebench_smoke.ipynb)
+for the interactive equivalent.
 
 ## Run the official harness
 
@@ -136,7 +136,7 @@ that prefix for `MINI_SWE_MODEL`.
 
 The wrapper selects the upstream `swebench_add_edit_tool.yaml` config and
 writes its required one-line vLLM server file. The server check is also
-available in `notebooks/local_llm_server_check.ipynb`.
+available in the [local server notebook](../notebooks/local_llm_server_check.ipynb).
 
 ## Custom harness
 

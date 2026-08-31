@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #PBS -N swesmith-collect
-#PBS -J 0-49
+#PBS -J 0-9
 #PBS -l select=1:ncpus=12:ngpus=1:mem=64gb
 #PBS -l walltime=24:00:00
 # Output and error paths are supplied by the submission wrapper.

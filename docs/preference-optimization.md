@@ -1,8 +1,10 @@
 # Preference optimization notes
 
-This note records the efficiency objective, pilot findings, implementation
-coverage, and paper-informed experiment plan. See the [project README](../README.md)
-for commands and operational defaults.
+This historical note records the efficiency objective, pilot findings,
+implementation coverage, and rationale used before the main experiment. It is
+not the current runbook. See the [project README](../README.md) for commands,
+the [sweep protocol](hyperparameter-sweep-light.md) for the final design, and
+the [results](hyperparameter-sweep-results.md) for the completed experiment.
 
 ## Objective
 
@@ -51,9 +53,9 @@ The pilot also exposes two calibration issues:
 | Successful-trajectory cost pairs | Implemented | `total_tokens` and `completion_tokens` are selectable; `MIN_COST_RATIO` removes negligible differences. |
 | DEPO/KTO objective | Implemented | Raw inverse tokens-per-step and inverse-step bonuses apply only to desirable trajectories. The repository labels every scored failure undesirable; the paper filters out low-quality failures. |
 | Reproducible trials and lineage | Implemented | Configuration, data hash, parent DMPO trial, checkpoints, and packages are isolated and validated. |
-| Gamma sweep | Configuration only | Run separately named trials for `gamma={0.7,0.9,0.99}`; no trainer change is required. |
-| DEPO paper hyperparameters | Configuration only | Run `DEPO_TOKEN_METRIC=completion_tokens`, `ALPHA_TOKENS=2`, and `ALPHA_STEPS=2`; the data and environment remain repository-specific. |
-| Full 65,536-token training/evaluation | Capacity test needed | `MAX_LENGTH` and `EVAL_CONTEXT_LENGTH` support it. Sixteen of 120 selected pilot trajectories exceed a 32K prompt history, so compare 32K and 65K if GPU memory permits. |
+| Gamma sweep | Completed | The final sweep evaluated `gamma={0.5,0.7,0.9}` and selected `0.7` within the DMPO family. |
+| DEPO paper hyperparameters | Completed | The sweep evaluated `DEPO_TOKEN_METRIC=completion_tokens`, `ALPHA_TOKENS=2`, and `ALPHA_STEPS=2`; the total-token variant was selected within the DEPO family. |
+| Long-context evaluation | Completed | Training used `MAX_LENGTH=8192`; screening used 32,768-token evaluation and final SWE-bench Verified testing used 65,536 tokens. Longer-context training remains untested. |
 | Deployment-weighted trajectory cost | Partial | Prompt, completion, total tokens, and steps are recorded, but builders do not yet accept input/output/cached-token/per-call prices. |
 | Step-aware DMPO pairs | Missing | Require the preferred successful trajectory to be Pareto-better in token cost and steps, or use an explicit composite cost for non-dominated cases. |
 | High-quality losing trajectories | Missing | Exclude empty-patch, timeout, patch-application failure, and model-terminated trajectories by default; prefer evaluated unresolved near misses. |
@@ -82,7 +84,12 @@ is roughly equivalent to `ALPHA_TOKENS=680` and `ALPHA_STEPS=2.3`. Do not make
 those raw values global defaults before implementing normalization and
 validating it on held-out data.
 
-## Paper-informed main experiment
+## Original main-experiment plan
+
+The following was the pre-experiment plan. The completed sweep expanded it to
+three DMPO and three DEPO configurations, selected `gamma=0.7` and the
+total-token DEPO variant on 200 tasks, and reported both 500-task evaluations
+in the [results document](hyperparameter-sweep-results.md).
 
 1. Train the primary DMPO arm with `DMPO_GAMMA=0.7` and the implemented
    multi-turn loss.

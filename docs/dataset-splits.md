@@ -4,6 +4,9 @@ The experiment uses `SWE-bench/SWE-smith-py` revision
 `77cab9055d42ab4a5c25c89a8f937096db13558e` with seed 42. The upstream dataset
 contains 50,908 tasks in a single published `train` split, so a local training
 and held-out partition is constructed before drawing the experiment samples.
+This page summarizes the completed reduced experiment; the canonical file
+inventory, generation procedure, and full-scale membership are documented in
+the [split provenance guide](../data/splits/README.md).
 
 ## Training and held-out partition
 

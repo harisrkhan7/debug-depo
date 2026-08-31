@@ -9,12 +9,12 @@ project. All files were generated from dataset revision
 
 - `train_instance_ids.txt`: 45,809 tasks from 117 repository snapshots.
 - `validation_instance_ids.txt`: 5,099 tasks from 14 repository snapshots.
-- `swesmith_train_5000_instance_ids.txt`: the trajectory-collection sample,
-  drawn only from `train_instance_ids.txt` and covering all 117 training
-  repository snapshots.
+- `swesmith_train_5000_instance_ids.txt`: the proposed full-scale
+  trajectory-collection membership, drawn only from `train_instance_ids.txt`
+  and covering all 117 training repository snapshots.
 - `swesmith_train_1000_instance_ids.txt`: a proportional subset of the tracked
   5,000-task training sample covering all 117 training repository snapshots,
-  used for the reduced trajectory collection. Its ordered-file SHA-256 is
+  used for the completed main trajectory collection. Its ordered-file SHA-256 is
   `4d60dbdc69aca4a1704d8c23ed0a72161e96fe93d077212aedb68e1312412965`.
 - `swesmith_validation_500_instance_ids.txt`: the fixed exclusion membership
   used to reproduce the confirmatory sample.
@@ -36,12 +36,12 @@ project. All files were generated from dataset revision
   the original eight-shard pilot assignment.
 - `swesmith_cache_5700_instance_ids.txt`: the exact union of the 5,000
   trajectory tasks, 200 screening tasks, and 500 confirmatory tasks. Use this
-  to prebuild the cache for the active design.
+  to prebuild the cache for the proposed full-scale design.
   The cache builder deduplicates these task IDs into 130 usable SWE-smith
   repository-image SIFs. The excluded image is not required by these subsets.
 - `swesmith_py_split_manifest.json`: dataset revision, policies, counts,
   memberships, and ordered-file SHA-256 hashes for the parent memberships and
-  the active 5,000/500/200/100 subsets.
+  the tracked 5,000/1,000/500/200/100 subsets.
 
 The 5,000 training IDs and 500 validation IDs are disjoint. Their parent
 memberships are also repository-disjoint, so no repository snapshot selected
@@ -152,7 +152,13 @@ screening budgets are not nested or if screening and confirmation overlap.
 Review and commit the manifest and ID files together if the dataset revision,
 seed, or sizes change.
 
-## Cluster usage
+## PBS usage
+
+The PBS full wrapper defaults to the 1,000-task membership and four rollouts
+per task so that its configuration matches the completed Lambda collection.
+The completed run itself used Lambda Cloud, not PBS. The commands below show
+how to override those defaults for the retained 5,000-task design. See the
+[experiment split summary](../../docs/dataset-splits.md) for both memberships.
 
 Build all 500 SWE-bench Verified images and the 130 SWE-smith images needed by
 the selected 5,700 tasks:
@@ -182,7 +188,7 @@ Collect the 5,000-task training set:
 RUN_NAME=swesmith-train-5000 \
 TASK_IDS_FILE=data/splits/swesmith_train_5000_instance_ids.txt \
 EXPECTED_TASKS=5000 \
-NUM_SHARDS=25 \
+NUM_SHARDS=10 \
   cluster/submit_swesmith_full.sh
 ```
 
@@ -199,6 +205,6 @@ NUM_SHARDS=100 \
 
 Keep `SPLIT=train`: validation here means local task-ID membership, not a
 separate Hugging Face split. Preview any submission by prefixing the command
-with `DRY_RUN=1`. With the tracked two temperatures and four runs per
-temperature, these commands produce eight trajectories per task: 40,000 for
-the training sample and 4,000 for the validation sample.
+with `DRY_RUN=1`. With the default two temperatures and two runs per
+temperature, these commands produce four trajectories per task: 20,000 for
+the training sample and 2,000 for the validation sample.

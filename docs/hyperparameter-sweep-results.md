@@ -1,5 +1,8 @@
 # Results and discussion: compute-light DMPO and DEPO sweep
 
+See the [project README](../README.md) for the execution environments and the
+[sweep protocol](hyperparameter-sweep-light.md) for the pre-declared design.
+
 ## Results
 
 ### Main finding

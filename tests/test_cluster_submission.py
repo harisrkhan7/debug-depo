@@ -110,12 +110,31 @@ def test_swesmith_full_submits_the_tracked_training_split(tmp_path: Path) -> Non
     assert completed.returncode == 0, completed.stderr
     assert len(calls) == 3
     collection = joined(calls[0])
+    evaluation = joined(calls[1])
     assert calls[0][-1] == "cluster/pbs/collect_swesmith_array.pbs"
-    assert "TASK_IDS_FILE=data/splits/swesmith_train_5000_instance_ids.txt" in collection
-    assert "EXPECTED_TASKS=5000" in collection
-    assert "-J 0-49" in collection
-    assert "depend=afterok:1.server" in joined(calls[1])
+    assert "TASK_IDS_FILE=data/splits/swesmith_train_1000_instance_ids.txt" in collection
+    assert "TASK_IDS_FILE=data/splits/swesmith_train_1000_instance_ids.txt" in evaluation
+    assert "EXPECTED_TASKS=1000" in collection
+    assert "RUNS_PER_TEMPERATURE=2" in collection
+    assert "TOTAL_SAMPLES=4" in collection
+    assert "-J 0-9" in collection
+    assert "depend=afterok:1.server" in evaluation
     assert "depend=afterok:2.server" in joined(calls[2])
+
+
+def test_swesmith_bounded_full_evaluation_uses_merged_membership(tmp_path: Path) -> None:
+    completed, calls = run_submission(
+        tmp_path,
+        "cluster/submit_swesmith_full.sh",
+        TASK_LIMIT="10",
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert len(calls) == 3
+    assert "TASK_IDS_FILE=data/splits/swesmith_train_1000_instance_ids.txt" in joined(calls[0])
+    assert "EXPECTED_TASKS=10" in joined(calls[1])
+    assert "TASK_IDS_FILE=data/splits/swesmith_train_1000_instance_ids.txt" not in joined(calls[1])
+    assert "TASK_IDS_FILE=" not in joined(calls[1])
 
 
 def test_swesmith_pilot_cache_pipeline_is_one_dependency_chain(tmp_path: Path) -> None:
@@ -289,7 +308,9 @@ def test_cluster_runtime_defaults_match_the_maintained_workflow(tmp_path: Path) 
     evaluation = (ROOT / "cluster" / "run_swesmith_evaluation_job.sh").read_text(
         encoding="utf-8"
     )
-    assert "DEFAULT_EXPECTED_SHARDS=50" in evaluation
+    assert "DEFAULT_EXPECTED_SHARDS=10" in evaluation
+    assert "DEFAULT_EXPECTED_TASKS=1000" in evaluation
+    assert "DEFAULT_TOTAL_SAMPLES=4" in evaluation
 
 
 def test_external_dependencies_are_pinned() -> None:

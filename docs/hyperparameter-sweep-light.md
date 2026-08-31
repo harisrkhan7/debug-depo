@@ -7,6 +7,11 @@ clear rationale. There is no initial 100-task round and no broad learning-rate,
 beta or epoch grid. The immutable task memberships and sampling policies are
 documented in [Dataset splits](dataset-splits.md).
 
+The main six-run sweep and both 500-task evaluations are complete; see the
+[results and discussion](hyperparameter-sweep-results.md). The later
+“remaining-budget” section is explicitly post-hoc and is not part of the
+confirmatory result.
+
 ## Compute budget
 
 ```text
@@ -217,7 +222,7 @@ DEPO paper-setting example:
 ```bash
 RUN_NAME=swesmith-train-1000-r2 \
 EXPERIMENT_ARM=dmpo-depo \
-DMPO_TRIAL_NAME=<selected-dmpo-trial> \
+DMPO_TRIAL_NAME=your-selected-dmpo-trial \
 DEPO_TRIAL_NAME=paper-a2-a2 \
 DEPO_TOKEN_METRIC=completion_tokens \
 ALPHA_TOKENS=2 \
@@ -234,9 +239,9 @@ EPOCHS=3 \
 For screening, validate with the 200-task file and a 32K context:
 
 ```bash
-RUN_NAME=<unique-validation-run-name> \
+RUN_NAME=your-unique-validation-run-name \
 TASK_IDS_FILE=data/splits/swesmith_validation_200_instance_ids.txt \
-MODEL_PATH=<packaged-model-path> \
+MODEL_PATH=/path/to/packaged-model \
 CONTEXT_LENGTH=32768 \
   bash cloud/run.sh validate
 ```
@@ -251,9 +256,9 @@ the arm list and expected count to the stage:
 
 ```bash
 "$UV" run debug-depo-compare-preference-arms \
-  --baseline sft=<sft-run>/analysis/rollouts.csv \
-  --arm dmpo=<dmpo-run>/analysis/rollouts.csv \
-  --arm dmpo-depo=<depo-run>/analysis/rollouts.csv \
+  --baseline sft=/path/to/sft-run/analysis/rollouts.csv \
+  --arm dmpo=/path/to/dmpo-run/analysis/rollouts.csv \
+  --arm dmpo-depo=/path/to/depo-run/analysis/rollouts.csv \
   --expected-tasks 200 \
   --success-tolerance 0.03 \
   --output results/preference-sweep-200.json

@@ -3,22 +3,15 @@ from __future__ import annotations
 from debug_depo import check_local_llm
 
 
-def test_normalize_base_url_strips_trailing_slashes() -> None:
-    assert check_local_llm.normalize_base_url(" http://127.0.0.1:8000/v1/// ") == (
-        "http://127.0.0.1:8000/v1"
+def test_normalize_base_url_accepts_common_pasted_formats() -> None:
+    expected = "http://127.0.0.1:8000/v1"
+    inputs = (
+        " http://127.0.0.1:8000/v1/// ",
+        "[http://127.0.0.1:8000/v1](http://127.0.0.1:8000/v1)",
+        "<http://127.0.0.1:8000/v1>",
     )
 
-
-def test_normalize_base_url_unwraps_markdown_link() -> None:
-    assert check_local_llm.normalize_base_url(
-        "[http://127.0.0.1:8000/v1](http://127.0.0.1:8000/v1)"
-    ) == "http://127.0.0.1:8000/v1"
-
-
-def test_normalize_base_url_unwraps_angle_brackets() -> None:
-    assert check_local_llm.normalize_base_url("<http://127.0.0.1:8000/v1>") == (
-        "http://127.0.0.1:8000/v1"
-    )
+    assert [check_local_llm.normalize_base_url(value) for value in inputs] == [expected] * 3
 
 
 def test_extract_model_ids_from_openai_style_response() -> None:
@@ -37,22 +30,13 @@ def test_extract_model_ids_from_openai_style_response() -> None:
     ]
 
 
-def test_extract_completion_text_from_chat_response() -> None:
-    payload = {
-        "choices": [
-            {
-                "message": {
-                    "role": "assistant",
-                    "content": "OK",
-                }
-            }
-        ]
-    }
+def test_extract_completion_text_supports_chat_and_text_responses() -> None:
+    payloads = (
+        {"choices": [{"message": {"role": "assistant", "content": "OK"}}]},
+        {"choices": [{"text": "OK"}]},
+    )
 
-    assert check_local_llm.extract_completion_text(payload) == "OK"
-
-
-def test_extract_completion_text_from_text_completion_shape() -> None:
-    payload = {"choices": [{"text": "OK"}]}
-
-    assert check_local_llm.extract_completion_text(payload) == "OK"
+    assert [check_local_llm.extract_completion_text(payload) for payload in payloads] == [
+        "OK",
+        "OK",
+    ]

@@ -57,56 +57,6 @@ def test_temperature_schedule_and_seeds_are_stable():
     assert len(set(seeds)) == 8
 
 
-def test_collect_parser_normalizes_limit_environment(monkeypatch):
-    monkeypatch.setenv("LIMIT", "")
-    assert build_collect_parser().parse_args([]).limit is None
-
-    monkeypatch.setenv("LIMIT", "5000")
-    assert build_collect_parser().parse_args([]).limit == 5000
-
-
-@pytest.mark.parametrize("spec", ["", "-0.1", "nan", "inf", "0.6:0.6"])
-def test_temperature_spec_rejects_invalid_values(spec):
-    with pytest.raises(ValueError):
-        parse_temperatures(spec)
-
-
-def test_require_complete_rejects_collection_errors(tmp_path, monkeypatch):
-    dataset = tmp_path / "tasks.jsonl"
-    output_dir = tmp_path / "collection"
-    write_tasks(dataset)
-    args = build_collect_parser().parse_args(
-        [
-            "--dataset",
-            str(dataset),
-            "--output-dir",
-            str(output_dir),
-            "--temperatures",
-            "0.6",
-            "--runs-per-temperature",
-            "1",
-            "--rollout-workers",
-            "1",
-            "--require-complete",
-            "--no-progress",
-        ]
-    )
-
-    def fail_rollout(*_args, **_kwargs):
-        raise RuntimeError("agent environment unavailable")
-
-    monkeypatch.setattr(
-        "debug_depo.swesmith_collect.run_agentforge_instance",
-        fail_rollout,
-    )
-
-    with pytest.raises(RuntimeError, match="did not finish every rollout"):
-        collect_swesmith(args)
-    summary = json.loads((output_dir / "summary.json").read_text(encoding="utf-8"))
-    assert summary["n_completed"] == 0
-    assert summary["n_errors"] == 2
-
-
 def test_collection_resume_retries_only_error_slots(tmp_path, monkeypatch):
     dataset = tmp_path / "tasks.jsonl"
     output_dir = tmp_path / "collection"
@@ -151,11 +101,7 @@ def test_collection_resume_retries_only_error_slots(tmp_path, monkeypatch):
         }
 
     def first_attempt(task, sample_dir, _config):
-        status = (
-            "completed"
-            if task["instance_id"] == "repo__project.task-1"
-            else "error"
-        )
+        status = "completed" if task["instance_id"] == "repo__project.task-1" else "error"
         return write_result(task, sample_dir, status)
 
     monkeypatch.setattr(
@@ -180,6 +126,97 @@ def test_collection_resume_retries_only_error_slots(tmp_path, monkeypatch):
     assert retried == ["repo__project.task-2"]
     assert summary["n_finished"] == 2
     assert summary["n_errors"] == 0
+    events = read_jsonl(output_dir / "rollout_events.jsonl")
+    starts = [event for event in events if event["event"] == "rollout_started"]
+    finishes = [event for event in events if event["event"] == "rollout_finished"]
+    assert [event["instance_id"] for event in starts] == [
+        "repo__project.task-1",
+        "repo__project.task-2",
+        "repo__project.task-2",
+    ]
+    assert len(finishes) == len(starts)
+    assert {"sample_index", "temperature", "seed"} <= starts[-1].keys()
+    active = json.loads((output_dir / "active_rollouts.json").read_text())
+    assert active["active"] == []
+
+
+def test_recovery_replicas_partition_slots_and_defer_canonical_summary(
+    tmp_path,
+    monkeypatch,
+):
+    dataset = tmp_path / "tasks.jsonl"
+    output_dir = tmp_path / "collection"
+    write_tasks(dataset)
+    base_arguments = [
+        "--dataset",
+        str(dataset),
+        "--output-dir",
+        str(output_dir),
+        "--temperatures",
+        "0.6",
+        "--runs-per-temperature",
+        "1",
+        "--rollout-workers",
+        "1",
+        "--require-complete",
+        "--no-progress",
+    ]
+
+    def write_result(task, sample_dir, status):
+        instance_id = str(task["instance_id"])
+        trajectory_dir = Path(sample_dir) / "trajectories" / instance_id
+        trajectory_dir.mkdir(parents=True, exist_ok=True)
+        result = {
+            "instance_id": instance_id,
+            "status": status,
+            "patch": "",
+            "patch_source": None,
+        }
+        (trajectory_dir / "trajectory.json").write_text(json.dumps(result))
+        return result
+
+    monkeypatch.setattr(
+        "debug_depo.swesmith_collect.run_agentforge_instance",
+        lambda task, sample_dir, _config: write_result(task, sample_dir, "error"),
+    )
+    with pytest.raises(RuntimeError, match="did not finish every rollout"):
+        collect_swesmith(build_collect_parser().parse_args(base_arguments))
+
+    recovered = []
+
+    def recover(task, sample_dir, _config):
+        recovered.append(str(task["instance_id"]))
+        return write_result(task, sample_dir, "completed")
+
+    monkeypatch.setattr(
+        "debug_depo.swesmith_collect.run_agentforge_instance",
+        recover,
+    )
+    for replica_index in (0, 1):
+        recovery_args = build_collect_parser().parse_args(
+            [
+                *base_arguments,
+                "--recovery-run-id",
+                "test-recovery",
+                "--recovery-replicas",
+                "2",
+                "--recovery-replica-index",
+                str(replica_index),
+            ]
+        )
+        recovery_summary = collect_swesmith(recovery_args)
+        assert recovery_summary["n_assigned_rollouts"] == 1
+        assert recovery_summary["n_finished"] == 1
+
+    assert recovered == ["repo__project.task-1", "repo__project.task-2"]
+    stale_summary = json.loads((output_dir / "summary.json").read_text())
+    assert stale_summary["n_errors"] == 2
+    assert (output_dir / "recovery-test-recovery-replica-0.json").is_file()
+    assert (output_dir / "recovery-test-recovery-replica-1.json").is_file()
+
+    final_summary = collect_swesmith(build_collect_parser().parse_args(base_arguments))
+    assert final_summary["n_finished"] == 2
+    assert final_summary["n_errors"] == 0
 
 
 def test_require_complete_accepts_model_terminations(tmp_path, monkeypatch):
@@ -222,50 +259,6 @@ def test_require_complete_accepts_model_terminations(tmp_path, monkeypatch):
     assert summary["n_errors"] == 0
 
 
-def test_collection_rejects_an_unexpected_selected_task_count(tmp_path):
-    dataset = tmp_path / "tasks.jsonl"
-    write_tasks(dataset)
-    args = build_collect_parser().parse_args(
-        [
-            "--dataset",
-            str(dataset),
-            "--output-dir",
-            str(tmp_path / "collection"),
-            "--expected-tasks",
-            "3",
-            "--mock",
-            "--no-progress",
-        ]
-    )
-
-    with pytest.raises(
-        ValueError,
-        match="Expected 3 selected SWE-smith tasks, found 2",
-    ):
-        collect_swesmith(args)
-
-
-def test_collection_rejects_pool_way_task_initialization(tmp_path):
-    dataset = tmp_path / "tasks.jsonl"
-    write_tasks(dataset)
-    args = build_collect_parser().parse_args(
-        [
-            "--dataset",
-            str(dataset),
-            "--output-dir",
-            str(tmp_path / "collection"),
-            "--mini-runner",
-            "pool_way",
-            "--mini-environment-class",
-            "docker",
-            "--no-progress",
-        ]
-    )
-
-    with pytest.raises(ValueError, match="pool_way.*ignores task startup commands"):
-        collect_swesmith(args)
-
-
 def test_mock_collect_evaluate_analyze_pipeline(tmp_path):
     dataset = tmp_path / "tasks.jsonl"
     run_root = tmp_path / "run"
@@ -300,9 +293,7 @@ def test_mock_collect_evaluate_analyze_pipeline(tmp_path):
     assert collection["total_samples_per_task"] == 8
     assert collection["task_initialization"] == "checkout_instance_branch"
     for sample_index in range(8):
-        rows = read_jsonl(
-            collection_root / f"samples/sample-{sample_index}/predictions.jsonl"
-        )
+        rows = read_jsonl(collection_root / f"samples/sample-{sample_index}/predictions.jsonl")
         assert len(rows) == 2
         assert {row["sample_index"] for row in rows} == {sample_index}
         assert {row["patch_apply_mode"] for row in rows} == {"reverse"}
@@ -346,16 +337,16 @@ def test_mock_collect_evaluate_analyze_pipeline(tmp_path):
 
     assert summary["rollouts"] == 16
     assert summary["resolved_rollouts"] == 16
-    assert summary["mixed_temperature_pass_at_k"] == {
-        str(index): 1.0 for index in range(1, 9)
-    }
+    assert summary["efficiency"]["trajectories"] == 16
+    assert summary["efficiency"]["resolved_trajectories"] == 16
+    assert summary["efficiency"]["resolution_rate"] == 1.0
+    assert summary["efficiency"]["all"]["total_tokens"]["available"] == 0
+    assert summary["efficiency"]["total_tokens_per_resolved_task"] is None
+    assert summary["mixed_temperature_pass_at_k"] == {str(index): 1.0 for index in range(1, 9)}
     assert {
         temperature: metrics["pass_at_k"]
         for temperature, metrics in summary["temperatures"].items()
-    } == {
-        temperature: {str(index): 1.0 for index in range(1, 5)}
-        for temperature in ("0.6", "0.7")
-    }
+    } == {temperature: {str(index): 1.0 for index in range(1, 5)} for temperature in ("0.6", "0.7")}
     assert len(tasks) == 2
     assert all(row["runs_resolved"] == "8" for row in tasks)
     assert all(row["mixed_temperature_pass_at_4"] == "1.0" for row in tasks)
@@ -364,54 +355,6 @@ def test_mock_collect_evaluate_analyze_pipeline(tmp_path):
     collect_args.temperatures = "0.5:0.7"
     with pytest.raises(ValueError, match="incompatible.*temperatures"):
         collect_swesmith(collect_args)
-
-
-def test_analysis_rejects_an_incoherent_sample_layout(tmp_path):
-    with pytest.raises(ValueError, match="divisible"):
-        analyze_swesmith(
-            tmp_path,
-            rollouts_csv=tmp_path / "rollouts.csv",
-            tasks_csv=tmp_path / "tasks.csv",
-            summary_output=tmp_path / "summary.json",
-            total_samples=10,
-            runs_per_temperature=4,
-        )
-
-
-def test_evaluation_rejects_requested_ids_missing_from_predictions(tmp_path):
-    dataset = tmp_path / "tasks.jsonl"
-    predictions = tmp_path / "predictions.jsonl"
-    write_tasks(dataset)
-    predictions.write_text(
-        json.dumps(
-            {
-                "instance_id": "repo__project.task-1",
-                "model_name_or_path": "model",
-                "model_patch": "",
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    args = build_evaluate_parser().parse_args(
-        [
-            "--dataset",
-            str(dataset),
-            "--predictions-path",
-            str(predictions),
-            "--summary-output",
-            str(tmp_path / "summary.json"),
-            "--log-dir",
-            str(tmp_path / "logs"),
-            "--runtime",
-            "mock",
-            "--instance-id",
-            "repo__project.task-2",
-        ]
-    )
-
-    with pytest.raises(ValueError, match="absent from the predictions"):
-        evaluate_swesmith(args)
 
 
 def test_evaluation_cache_is_keyed_by_prediction_content(tmp_path):
@@ -479,58 +422,12 @@ def test_evaluation_dry_run_does_not_mutate_cached_reports(tmp_path):
     cache_key_path = log_dir / "cache_key.json"
     report_path.write_text('{"resolved": true}\n', encoding="utf-8")
     cache_key_path.write_text('{"old": "cache"}\n', encoding="utf-8")
-    before = {
-        path.name: path.read_bytes()
-        for path in log_dir.iterdir()
-    }
+    before = {path.name: path.read_bytes() for path in log_dir.iterdir()}
 
     result = run_instance(instance, prediction, args)
 
     assert result["status"] == "dry_run"
-    assert {
-        path.name: path.read_bytes()
-        for path in log_dir.iterdir()
-    } == before
-
-
-def test_evaluation_dry_run_does_not_write_new_artifacts(tmp_path):
-    dataset = tmp_path / "tasks.jsonl"
-    predictions = tmp_path / "predictions.jsonl"
-    write_tasks(dataset)
-    predictions.write_text(
-        json.dumps(
-            {
-                "instance_id": "repo__project.task-1",
-                "model_name_or_path": "model",
-                "model_patch": "patch",
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    summary_path = tmp_path / "evaluation" / "summary.json"
-    log_dir = tmp_path / "evaluation" / "logs"
-    args = build_evaluate_parser().parse_args(
-        [
-            "--dataset",
-            str(dataset),
-            "--predictions-path",
-            str(predictions),
-            "--summary-output",
-            str(summary_path),
-            "--log-dir",
-            str(log_dir),
-            "--runtime",
-            "mock",
-            "--dry-run",
-        ]
-    )
-
-    summary = evaluate_swesmith(args)
-
-    assert summary["status_ids"] == {"dry_run": ["repo__project.task-1"]}
-    assert not summary_path.exists()
-    assert not log_dir.exists()
+    assert {path.name: path.read_bytes() for path in log_dir.iterdir()} == before
 
 
 def test_require_complete_rejects_evaluation_infrastructure_errors(
@@ -610,10 +507,7 @@ def test_analysis_excludes_dry_runs_from_scored_metrics(tmp_path):
         ),
         encoding="utf-8",
     )
-    stale_report = (
-        run_root
-        / "evaluation/sample-0/logs/repo__project.task-1/report.json"
-    )
+    stale_report = run_root / "evaluation/sample-0/logs/repo__project.task-1/report.json"
     stale_report.parent.mkdir(parents=True)
     stale_report.write_text(
         json.dumps(

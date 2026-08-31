@@ -49,6 +49,9 @@ OVERWRITE="${OVERWRITE:-0}"
 SUBMIT_EVAL="${SUBMIT_EVAL:-1}"
 SUBMIT_ANALYSIS="${SUBMIT_ANALYSIS:-1}"
 EXPECTED_COUNT="${EXPECTED_COUNT:-500}"
+COLLECTION_STAGE_LABEL="${COLLECTION_STAGE_LABEL:-Collection job}"
+EVALUATION_STAGE_LABEL="${EVALUATION_STAGE_LABEL:-Evaluation job}"
+ANALYSIS_STAGE_LABEL="${ANALYSIS_STAGE_LABEL:-Analysis job}"
 
 if [[ ! "$RUN_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
   echo "RUN_NAME may contain only letters, numbers, dots, underscores, and dashes." >&2
@@ -81,24 +84,30 @@ if [[ -n "$TASK_IDS_FILE" ]]; then
   evaluation_variables+=",TASK_IDS_FILE=$TASK_IDS_FILE"
 fi
 analysis_variables="RUN_NAME=$RUN_NAME,RUN_ROOT=$RUN_ROOT,EXPECTED_COUNT=$EXPECTED_COUNT,ANALYSIS_SAMPLE_PER_SHARD=0,ANALYSIS_OUTPUT_SUBDIR=analysis"
+collection_dependency_args=()
+collection_dependency_detail="Array indices: 0-$last_shard"
+if [[ -n "${AFTEROK_JOB_ID:-}" ]]; then
+  collection_dependency_args=(-W "depend=afterok:$AFTEROK_JOB_ID")
+  collection_dependency_detail+="; dependency: successful job $AFTEROK_JOB_ID"
+fi
 
 if [[ "${DRY_RUN:-0}" == "1" ]]; then
   printf 'Dry run: no jobs submitted.\n\n'
   printf 'Cluster logs: %s\n\n' "$CLUSTER_LOG_DIR"
   print_dry_run_job \
-    "Collection job" \
+    "$COLLECTION_STAGE_LABEL" \
     "cluster/pbs/collect_verified_full.pbs" \
-    "Array indices: 0-$last_shard" \
+    "$collection_dependency_detail" \
     "$collection_variables"
   if [[ "$SUBMIT_EVAL" == "1" ]]; then
     print_dry_run_job \
-      "Evaluation job" \
+      "$EVALUATION_STAGE_LABEL" \
       "cluster/pbs/evaluate_verified_full.pbs" \
       "Dependency: successful collection array" \
       "$evaluation_variables"
     if [[ "$SUBMIT_ANALYSIS" == "1" ]]; then
       print_dry_run_job \
-        "Analysis job" \
+        "$ANALYSIS_STAGE_LABEL" \
         "cluster/pbs/analyze_verified.pbs" \
         "Dependency: successful evaluation job" \
         "$analysis_variables"
@@ -118,6 +127,7 @@ qsub_log_args=(-o "$CLUSTER_LOG_DIR/" -e "$CLUSTER_LOG_DIR/")
 collection_job="$(qsub \
   "${qsub_log_args[@]}" \
   -J "0-$last_shard" \
+  "${collection_dependency_args[@]}" \
   -v "$collection_variables" \
   cluster/pbs/collect_verified_full.pbs)"
 echo "Submitted $NUM_SHARDS-shard collection array: $collection_job"

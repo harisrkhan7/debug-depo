@@ -8,9 +8,12 @@ import json
 import re
 import statistics
 from collections import Counter
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
+
+from debug_depo.efficiency import summarize_efficiency
 
 
 CSV_COLUMNS = (
@@ -101,13 +104,13 @@ def _read_jsonl(paths: Iterable[Path]) -> list[dict[str, Any]]:
 
 def _prediction_rows(run_root: Path) -> tuple[list[dict[str, Any]], list[Path]]:
     merged = run_root / "merged" / "predictions.jsonl"
-    paths = [merged] if merged.is_file() else sorted(
-        (run_root / "rollouts").glob("shard-*/predictions.jsonl")
+    paths = (
+        [merged]
+        if merged.is_file()
+        else sorted((run_root / "rollouts").glob("shard-*/predictions.jsonl"))
     )
     if not paths:
-        raise FileNotFoundError(
-            f"No merged or sharded predictions.jsonl found under {run_root}"
-        )
+        raise FileNotFoundError(f"No merged or sharded predictions.jsonl found under {run_root}")
     rows = _read_jsonl(paths)
     ids = [str(row.get("instance_id", "")) for row in rows]
     missing = [index for index, instance_id in enumerate(ids, 1) if not instance_id]
@@ -146,7 +149,9 @@ def _instance_directory_index(run_root: Path) -> dict[str, tuple[Path, str]]:
         if not path.is_dir():
             continue
         task = _read_json(path / "task.json")
-        instance_id = str(task.get("instance_id") or path.name) if isinstance(task, dict) else path.name
+        instance_id = (
+            str(task.get("instance_id") or path.name) if isinstance(task, dict) else path.name
+        )
         index[instance_id] = (path, path.parents[1].name)
     return index
 
@@ -261,12 +266,16 @@ def _trajectory_metrics(
     agent_config = raw_config.get("agent", {}) if isinstance(raw_config.get("agent"), dict) else {}
     step_limit = _int_value(agent_config.get("step_limit"))
     if step_limit is None:
-        wrapper_config = wrapper.get("config", {}) if isinstance(wrapper.get("config"), dict) else {}
+        wrapper_config = (
+            wrapper.get("config", {}) if isinstance(wrapper.get("config"), dict) else {}
+        )
         step_limit = _int_value(wrapper_config.get("max_steps"))
 
     wrapper_config = wrapper.get("config", {}) if isinstance(wrapper.get("config"), dict) else {}
     context_limit = _int_value(wrapper_config.get("context_length"))
-    model_stats = raw_info.get("model_stats", {}) if isinstance(raw_info.get("model_stats"), dict) else {}
+    model_stats = (
+        raw_info.get("model_stats", {}) if isinstance(raw_info.get("model_stats"), dict) else {}
+    )
     api_calls = _int_value(model_stats.get("api_calls"))
     max_prompt = max(prompt_tokens) if prompt_tokens else None
     action_steps = len(assistants) if messages else None
@@ -303,9 +312,7 @@ def _trajectory_metrics(
         "commands_executed": len(commands) if messages else "",
         "commands_succeeded": commands_succeeded if messages else "",
         "commands_failed": commands_failed if messages else "",
-        "commands_unknown_returncode": max(0, len(commands) - len(returncodes))
-        if messages
-        else "",
+        "commands_unknown_returncode": max(0, len(commands) - len(returncodes)) if messages else "",
         "repeated_commands": len(normalized_commands) - len(set(normalized_commands))
         if messages
         else "",
@@ -528,15 +535,39 @@ def _failure(
     if evaluation_status == "resolved":
         return "", "", "", "", False
     if evaluation_status == "unresolved":
-        return "evaluation", "tests_failed", "Patch evaluated but did not resolve the task", evaluation_evidence, True
+        return (
+            "evaluation",
+            "tests_failed",
+            "Patch evaluated but did not resolve the task",
+            evaluation_evidence,
+            True,
+        )
     if evaluation_status == "patch_failed":
-        return "evaluation", "patch_apply_failed", "Patch could not be applied", evaluation_evidence, False
+        return (
+            "evaluation",
+            "patch_apply_failed",
+            "Patch could not be applied",
+            evaluation_evidence,
+            False,
+        )
     if evaluation_status == "timeout":
-        return "evaluation", "timeout", "Evaluation exceeded its timeout", evaluation_evidence, False
+        return (
+            "evaluation",
+            "timeout",
+            "Evaluation exceeded its timeout",
+            evaluation_evidence,
+            False,
+        )
     if evaluation_status in {"error", "missing_report", "incomplete"} and patch_present:
         classified = _classify_text(evaluation_evidence)
         category = classified[0] if classified else "evaluation_error"
-        return "evaluation", category, "Evaluation did not produce a usable report", evaluation_evidence, not bool(classified)
+        return (
+            "evaluation",
+            category,
+            "Evaluation did not produce a usable report",
+            evaluation_evidence,
+            not bool(classified),
+        )
 
     mini_status = wrapper.get("mini_swe_exit_status") or summary_result.get("mini_swe_exit_status")
     raw_info = raw.get("info", {}) if isinstance(raw.get("info"), dict) else {}
@@ -544,7 +575,9 @@ def _failure(
     combined_evidence = " | ".join(
         value for value in (str(summary_result.get("error", "")), rollout_evidence) if value
     )
-    classified = _classify_text(" | ".join(str(value) for value in (mini_status, agent_status, combined_evidence)))
+    classified = _classify_text(
+        " | ".join(str(value) for value in (mini_status, agent_status, combined_evidence))
+    )
     if mini_status:
         category = classified[0] if classified else "agent_exit_error"
         discarded_patch = wrapper.get("error_patch")
@@ -563,15 +596,45 @@ def _failure(
         )
     if wrapper.get("status") == "error" or summary_result.get("status") == "error":
         category = classified[0] if classified else "rollout_process_error"
-        return "rollout", category, "Rollout process failed before producing a patch", combined_evidence, not bool(classified)
+        return (
+            "rollout",
+            category,
+            "Rollout process failed before producing a patch",
+            combined_evidence,
+            not bool(classified),
+        )
     if agent_status and str(agent_status) != "Submitted":
         category = classified[0] if classified else "agent_exit_error"
-        return "rollout", category, f"Agent exit status: {agent_status}", combined_evidence, not bool(classified)
+        return (
+            "rollout",
+            category,
+            f"Agent exit status: {agent_status}",
+            combined_evidence,
+            not bool(classified),
+        )
     if agent_status == "Submitted":
-        return "rollout", "submitted_empty_patch", "Agent submitted an empty patch", combined_evidence, True
+        return (
+            "rollout",
+            "submitted_empty_patch",
+            "Agent submitted an empty patch",
+            combined_evidence,
+            True,
+        )
     if not wrapper:
-        return "rollout", "missing_trajectory", "No wrapper trajectory was found", combined_evidence, False
-    return "rollout", "missing_patch_artifact", "Rollout completed without a patch artifact", combined_evidence, True
+        return (
+            "rollout",
+            "missing_trajectory",
+            "No wrapper trajectory was found",
+            combined_evidence,
+            False,
+        )
+    return (
+        "rollout",
+        "missing_patch_artifact",
+        "Rollout completed without a patch artifact",
+        combined_evidence,
+        True,
+    )
 
 
 def _evaluation_status(
@@ -627,6 +690,148 @@ def _sample_across_shards(
     return sampled
 
 
+@dataclass(frozen=True)
+class _AnalysisArtifacts:
+    prediction_shards: dict[str, str]
+    trajectories: dict[str, tuple[Path, dict[str, Any], str]]
+    instance_directories: dict[str, tuple[Path, str]]
+    summary_results: dict[str, dict[str, Any]]
+    aggregate_evaluations: dict[str, str]
+    report_paths: dict[str, Path]
+    evaluation_log_dirs: dict[str, Path]
+
+
+def _analysis_artifacts(root: Path, predictions: list[dict[str, Any]]) -> _AnalysisArtifacts:
+    prediction_shards = _prediction_shards(root)
+    trajectories = _trajectory_index(root)
+    instance_directories = _instance_directory_index(root)
+    summary_results = _summary_results(root)
+    aggregate_evaluations = _aggregate_evaluation(root)
+    instance_ids = {str(row["instance_id"]) for row in predictions}
+    report_paths, evaluation_log_dirs = _evaluation_artifacts(root, instance_ids)
+    return _AnalysisArtifacts(
+        prediction_shards=prediction_shards,
+        trajectories=trajectories,
+        instance_directories=instance_directories,
+        summary_results=summary_results,
+        aggregate_evaluations=aggregate_evaluations,
+        report_paths=report_paths,
+        evaluation_log_dirs=evaluation_log_dirs,
+    )
+
+
+def _directory_excerpt(directory: Path | None, filenames: Iterable[str]) -> str:
+    if directory is None:
+        return ""
+    return _text_excerpt(directory / filename for filename in filenames)
+
+
+def _instance_row(prediction: dict[str, Any], artifacts: _AnalysisArtifacts) -> dict[str, Any]:
+    instance_id = str(prediction["instance_id"])
+    patch_value = prediction.get("model_patch", "")
+    patch = patch_value if isinstance(patch_value, str) else ""
+    patch_present = bool(patch.strip())
+    patch_files, added, deleted = _patch_stats(patch)
+
+    wrapper_path: Path | None = None
+    wrapper: dict[str, Any] = {}
+    shard = artifacts.prediction_shards.get(instance_id, "")
+    instance_dir: Path | None = None
+    if instance_id in artifacts.instance_directories:
+        instance_dir, shard = artifacts.instance_directories[instance_id]
+    if instance_id in artifacts.trajectories:
+        wrapper_path, wrapper, shard = artifacts.trajectories[instance_id]
+        instance_dir = wrapper_path.parent
+
+    _, raw = _raw_trajectory(instance_dir)
+    raw_info = raw.get("info", {}) if isinstance(raw.get("info"), dict) else {}
+    model_stats = (
+        raw_info.get("model_stats", {}) if isinstance(raw_info.get("model_stats"), dict) else {}
+    )
+    messages = raw.get("messages", []) if isinstance(raw.get("messages"), list) else []
+    trajectory_metrics = _trajectory_metrics(raw, messages, wrapper)
+    duration, duration_source, duration_is_estimate = _duration(wrapper_path, wrapper, instance_dir)
+    action_steps = trajectory_metrics["agent_action_steps"]
+    seconds_per_action = (
+        round(float(duration) / action_steps, 6)
+        if duration != "" and isinstance(action_steps, int) and action_steps > 0
+        else ""
+    )
+
+    report_path = artifacts.report_paths.get(instance_id)
+    report_entry = _entry_for_instance(_read_json(report_path), instance_id)
+    log_dir = artifacts.evaluation_log_dirs.get(instance_id)
+    evaluation_status = _evaluation_status(
+        patch_present=patch_present,
+        aggregate_status=artifacts.aggregate_evaluations.get(instance_id),
+        report_entry=report_entry,
+        log_dir=log_dir,
+    )
+    rollout_evidence = _directory_excerpt(
+        instance_dir, ("stderr.txt", "minisweagent.log", "stdout.txt")
+    )
+    evaluation_evidence = _directory_excerpt(
+        log_dir, ("apply_patch.log", "apptainer_stderr.txt", "test_output.txt")
+    )
+    summary_result = artifacts.summary_results.get(instance_id, {})
+    stage, category, reason, evidence, needs_review = _failure(
+        evaluation_status=evaluation_status,
+        patch_present=patch_present,
+        wrapper=wrapper,
+        summary_result=summary_result,
+        raw=raw,
+        rollout_evidence=rollout_evidence,
+        evaluation_evidence=evaluation_evidence,
+    )
+
+    task = _read_json(instance_dir / "task.json" if instance_dir else None)
+    repo = str(task.get("repo", "")) if isinstance(task, dict) else ""
+    if not repo:
+        repo = instance_id.split("__", 1)[0]
+    return {
+        "instance_id": instance_id,
+        "repo": repo,
+        "shard": shard,
+        "rollout_status": wrapper.get("status", summary_result.get("status", "missing")),
+        "rollout_returncode": wrapper.get("returncode", ""),
+        "mini_swe_exit_status": wrapper.get(
+            "mini_swe_exit_status", summary_result.get("mini_swe_exit_status", "")
+        ),
+        "agent_exit_status": raw_info.get("exit_status", ""),
+        "patch_present": patch_present,
+        "patch_chars": len(patch),
+        "patch_files": patch_files,
+        "patch_added_lines": added,
+        "patch_deleted_lines": deleted,
+        "patch_source": wrapper.get("patch_source", ""),
+        "discarded_error_patch_chars": (
+            len(wrapper["error_patch"]) if isinstance(wrapper.get("error_patch"), str) else ""
+        ),
+        "trajectory_steps": _trajectory_step_count(raw, messages, wrapper),
+        "trajectory_messages": len(messages) if messages else "",
+        **trajectory_metrics,
+        "model_api_calls": model_stats.get("api_calls", ""),
+        "duration_seconds": duration,
+        "seconds_per_action": seconds_per_action,
+        "duration_source": duration_source,
+        "duration_is_estimate": duration_is_estimate,
+        "evaluation_status": evaluation_status,
+        "resolved": evaluation_status == "resolved",
+        "evaluation_returncode": _evaluation_returncode(log_dir),
+        "fail_to_pass_success": _count_test_status(report_entry, "FAIL_TO_PASS", "success"),
+        "fail_to_pass_failure": _count_test_status(report_entry, "FAIL_TO_PASS", "failure"),
+        "pass_to_pass_success": _count_test_status(report_entry, "PASS_TO_PASS", "success"),
+        "pass_to_pass_failure": _count_test_status(report_entry, "PASS_TO_PASS", "failure"),
+        "failure_stage": stage,
+        "failure_category": category,
+        "failure_reason": reason,
+        "failure_evidence": evidence,
+        "needs_llm_review": needs_review,
+        "trajectory_path": str(wrapper_path or ""),
+        "evaluation_report_path": str(report_path or ""),
+    }
+
+
 def analyze_run(
     run_root: str | Path,
     output_csv: str | Path,
@@ -637,128 +842,8 @@ def analyze_run(
 ) -> dict[str, Any]:
     root = Path(run_root).expanduser().resolve()
     predictions, prediction_paths = _prediction_rows(root)
-    prediction_shards = _prediction_shards(root)
-    trajectory_index = _trajectory_index(root)
-    instance_directories = _instance_directory_index(root)
-    summary_results = _summary_results(root)
-    aggregate = _aggregate_evaluation(root)
-    instance_ids = {str(row["instance_id"]) for row in predictions}
-    report_paths, eval_log_dirs = _evaluation_artifacts(root, instance_ids)
-
-    rows: list[dict[str, Any]] = []
-    for prediction in predictions:
-        instance_id = str(prediction["instance_id"])
-        patch = prediction.get("model_patch", "")
-        patch = patch if isinstance(patch, str) else ""
-        patch_present = bool(patch.strip())
-        patch_files, added, deleted = _patch_stats(patch)
-
-        wrapper_path: Path | None = None
-        wrapper: dict[str, Any] = {}
-        shard = prediction_shards.get(instance_id, "")
-        instance_dir: Path | None = None
-        if instance_id in instance_directories:
-            instance_dir, shard = instance_directories[instance_id]
-        if instance_id in trajectory_index:
-            wrapper_path, wrapper, shard = trajectory_index[instance_id]
-            instance_dir = wrapper_path.parent
-        _, raw = _raw_trajectory(instance_dir)
-        raw_info = raw.get("info", {}) if isinstance(raw.get("info"), dict) else {}
-        model_stats = raw_info.get("model_stats", {}) if isinstance(raw_info.get("model_stats"), dict) else {}
-        messages = raw.get("messages", []) if isinstance(raw.get("messages"), list) else []
-        api_calls = model_stats.get("api_calls", "")
-        steps = _trajectory_step_count(raw, messages, wrapper)
-        trajectory_metrics = _trajectory_metrics(raw, messages, wrapper)
-        duration, duration_source, duration_is_estimate = _duration(
-            wrapper_path, wrapper, instance_dir
-        )
-        action_steps = trajectory_metrics["agent_action_steps"]
-        seconds_per_action = (
-            round(float(duration) / int(action_steps), 6)
-            if duration != "" and isinstance(action_steps, int) and action_steps > 0
-            else ""
-        )
-
-        report_path = report_paths.get(instance_id)
-        report_entry = _entry_for_instance(_read_json(report_path), instance_id)
-        log_dir = eval_log_dirs.get(instance_id)
-        eval_status = _evaluation_status(
-            patch_present=patch_present,
-            aggregate_status=aggregate.get(instance_id),
-            report_entry=report_entry,
-            log_dir=log_dir,
-        )
-        rollout_evidence = _text_excerpt(
-            [
-                instance_dir / "stderr.txt" if instance_dir else Path("/__missing__"),
-                instance_dir / "minisweagent.log" if instance_dir else Path("/__missing__"),
-                instance_dir / "stdout.txt" if instance_dir else Path("/__missing__"),
-            ]
-        )
-        eval_evidence = _text_excerpt(
-            [
-                log_dir / "apply_patch.log" if log_dir else Path("/__missing__"),
-                log_dir / "apptainer_stderr.txt" if log_dir else Path("/__missing__"),
-                log_dir / "test_output.txt" if log_dir else Path("/__missing__"),
-            ]
-        )
-        stage, category, reason, evidence, needs_review = _failure(
-            evaluation_status=eval_status,
-            patch_present=patch_present,
-            wrapper=wrapper,
-            summary_result=summary_results.get(instance_id, {}),
-            raw=raw,
-            rollout_evidence=rollout_evidence,
-            evaluation_evidence=eval_evidence,
-        )
-
-        task = _read_json(instance_dir / "task.json" if instance_dir else None)
-        repo = str(task.get("repo", "")) if isinstance(task, dict) else ""
-        if not repo:
-            repo = instance_id.split("__", 1)[0]
-        row = {
-            "instance_id": instance_id,
-            "repo": repo,
-            "shard": shard,
-            "rollout_status": wrapper.get("status", summary_results.get(instance_id, {}).get("status", "missing")),
-            "rollout_returncode": wrapper.get("returncode", ""),
-            "mini_swe_exit_status": wrapper.get("mini_swe_exit_status", summary_results.get(instance_id, {}).get("mini_swe_exit_status", "")),
-            "agent_exit_status": raw_info.get("exit_status", ""),
-            "patch_present": patch_present,
-            "patch_chars": len(patch),
-            "patch_files": patch_files,
-            "patch_added_lines": added,
-            "patch_deleted_lines": deleted,
-            "patch_source": wrapper.get("patch_source", ""),
-            "discarded_error_patch_chars": len(wrapper.get("error_patch", ""))
-            if isinstance(wrapper.get("error_patch"), str)
-            else "",
-            "trajectory_steps": steps,
-            "trajectory_messages": len(messages) if messages else "",
-            **trajectory_metrics,
-            "model_api_calls": api_calls,
-            "duration_seconds": duration,
-            "seconds_per_action": seconds_per_action,
-            "duration_source": duration_source,
-            "duration_is_estimate": duration_is_estimate,
-            "evaluation_status": eval_status,
-            "resolved": eval_status == "resolved",
-            "evaluation_returncode": _evaluation_returncode(log_dir),
-            "fail_to_pass_success": _count_test_status(report_entry, "FAIL_TO_PASS", "success"),
-            "fail_to_pass_failure": _count_test_status(report_entry, "FAIL_TO_PASS", "failure"),
-            "pass_to_pass_success": _count_test_status(report_entry, "PASS_TO_PASS", "success"),
-            "pass_to_pass_failure": _count_test_status(report_entry, "PASS_TO_PASS", "failure"),
-            "failure_stage": stage,
-            "failure_category": category,
-            "failure_reason": reason,
-            "failure_evidence": evidence,
-            "needs_llm_review": needs_review,
-            "trajectory_path": str(wrapper_path or ""),
-            "evaluation_report_path": str(report_path or ""),
-        }
-        rows.append(row)
-
-    source_rows = rows
+    artifacts = _analysis_artifacts(root, predictions)
+    source_rows = [_instance_row(prediction, artifacts) for prediction in predictions]
     rows = _sample_across_shards(source_rows, sample_per_shard)
 
     csv_path = Path(output_csv).expanduser()
@@ -771,7 +856,9 @@ def analyze_run(
     durations = [float(row["duration_seconds"]) for row in rows if row["duration_seconds"] != ""]
     evaluation_counts = Counter(str(row["evaluation_status"]) for row in rows)
     rollout_counts = Counter(str(row["rollout_status"]) for row in rows)
-    failure_counts = Counter(str(row["failure_category"]) for row in rows if row["failure_category"])
+    failure_counts = Counter(
+        str(row["failure_category"]) for row in rows if row["failure_category"]
+    )
     summary = {
         "run_root": str(root),
         "csv_path": str(csv_path.resolve()),
@@ -791,6 +878,15 @@ def analyze_run(
         "evaluation_status_counts": dict(sorted(evaluation_counts.items())),
         "failure_category_counts": dict(sorted(failure_counts.items())),
         "needs_llm_review": sum(bool(row["needs_llm_review"]) for row in rows),
+        "efficiency": summarize_efficiency(
+            rows,
+            fields={
+                "action_steps": "agent_action_steps",
+                "prompt_tokens": "prompt_tokens_total",
+                "completion_tokens": "completion_tokens_total",
+                "total_tokens": "total_tokens",
+            },
+        ),
         "duration_available": len(durations),
         "duration_seconds": {
             "min": min(durations) if durations else None,

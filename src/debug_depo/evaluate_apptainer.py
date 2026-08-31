@@ -51,6 +51,14 @@ from debug_depo.utils import (
 DEFAULT_IMAGE_TEMPLATE = DEFAULT_SWEBENCH_IMAGE_TEMPLATE
 EVAL_BIND_DIR = "/swebench_eval"
 CACHE_KEY_SCHEMA_VERSION = 2
+DEFAULT_THREADS_PER_TASK = 1
+THREAD_LIMIT_ENV_VARS = (
+    "OMP_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "BLIS_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+)
 SCORED_STATUSES = frozenset(
     {
         "completed",
@@ -60,6 +68,15 @@ SCORED_STATUSES = frozenset(
         "timeout",
     }
 )
+
+
+def positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
 def collect_instance_ids(args: argparse.Namespace) -> list[str]:
     ids = list(args.instance_ids or [])
     if args.instance_ids_file:
@@ -67,12 +84,22 @@ def collect_instance_ids(args: argparse.Namespace) -> list[str]:
     return ids
 
 
-def write_runner_script(log_dir: Path) -> Path:
+def write_runner_script(
+    log_dir: Path,
+    *,
+    threads_per_task: int = DEFAULT_THREADS_PER_TASK,
+) -> Path:
+    if threads_per_task < 1:
+        raise ValueError("threads_per_task must be a positive integer")
+    thread_exports = "\n".join(
+        f'export {name}="{threads_per_task}"' for name in THREAD_LIMIT_ENV_VARS
+    )
     runner = log_dir / "run_apptainer_eval.sh"
     runner.write_text(
         f"""#!/usr/bin/env bash
 set -uo pipefail
 cd /testbed || exit 20
+{thread_exports}
 git config --global --add safe.directory /testbed || true
 patch_status="{EVAL_BIND_DIR}/patch_status.txt"
 apply_log="{EVAL_BIND_DIR}/apply_patch.log"
@@ -240,7 +267,7 @@ def run_instance(
 
     (log_dir / "patch.diff").write_text(str(patch), encoding="utf-8")
     (log_dir / "eval.sh").write_text(test_spec.eval_script, encoding="utf-8")
-    write_runner_script(log_dir)
+    write_runner_script(log_dir, threads_per_task=args.threads_per_task)
     command = build_apptainer_command(
         sif_path,
         log_dir,
@@ -493,6 +520,7 @@ def run_apptainer_evaluation(args: argparse.Namespace) -> dict[str, Any]:
         **summarize_report(
             report,
             dataset=args.dataset,
+            dataset_revision=args.dataset_revision,
             split=args.split,
             model=args.model,
         ),
@@ -535,6 +563,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--instance-id", action="append", dest="instance_ids")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--max-workers", type=int, default=1)
+    parser.add_argument(
+        "--threads-per-task",
+        type=positive_int,
+        default=DEFAULT_THREADS_PER_TASK,
+        help=(
+            "Thread limit exported inside each evaluation container for OpenMP, "
+            "MKL, OpenBLAS, BLIS, and NumExpr."
+        ),
+    )
     parser.add_argument("--timeout", type=int, default=1800)
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--dry-run", action="store_true")

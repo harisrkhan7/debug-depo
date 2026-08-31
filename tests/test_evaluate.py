@@ -6,12 +6,13 @@ from pathlib import Path
 import pytest
 
 from debug_depo import evaluate
-from debug_depo.evaluate import build_evaluation_command, model_report_name, summarize_report
+from debug_depo.evaluate import model_report_name, summarize_report
 
 
 def args(**overrides):
     values = {
         "dataset": "princeton-nlp/SWE-bench_Verified",
+        "dataset_revision": "c104f840cc67f8b6eec6f759ebc8b2693d585d4a",
         "split": "test",
         "predictions_path": "predictions.jsonl",
         "max_workers": 2,
@@ -35,80 +36,7 @@ def args(**overrides):
     return Namespace(**values)
 
 
-def test_build_evaluation_command_includes_empty_namespace_for_local_builds():
-    command = build_evaluation_command(args())
-
-    namespace_index = command.index("--namespace")
-    assert command[namespace_index + 1] == ""
-    assert command[-3:] == ["--instance_ids", "a", "b"]
-
-
-def test_summarize_report_compares_full_verified_target():
-    summary = summarize_report(
-        {
-            "total_instances": 500,
-            "submitted_instances": 500,
-            "completed_instances": 500,
-            "resolved_instances": 191,
-            "unresolved_instances": 309,
-            "empty_patch_instances": 0,
-            "error_instances": 0,
-        }
-    )
-
-    assert summary["resolution_rate"] == 191 / 500
-    assert summary["target_name"] == "klear-agentforge-8b-sft-swe-bench-verified"
-    assert summary["resolved_delta_vs_target"] == 0
-    assert model_report_name("org/model", "run") == "org__model.run.json"
-
-
-def test_summarize_report_omits_verified_target_for_other_evaluation_setups():
-    report = {
-        "total_instances": 100,
-        "submitted_instances": 100,
-        "completed_instances": 100,
-        "resolved_instances": 40,
-        "unresolved_instances": 60,
-        "empty_patch_instances": 0,
-        "error_instances": 0,
-    }
-
-    summary = summarize_report(
-        report,
-        dataset="SWE-bench/SWE-smith-py",
-        split="validation",
-        model="org/trained-model",
-    )
-
-    assert summary["dataset"] == "SWE-bench/SWE-smith-py"
-    assert summary["split"] == "validation"
-    assert summary["model"] == "org/trained-model"
-    assert summary["resolution_rate"] == 0.4
-    assert summary["target_name"] is None
-    assert summary["target_score"] is None
-    assert summary["target_resolved"] is None
-    assert summary["target_total"] is None
-    assert summary["resolved_delta_vs_target"] is None
-
-
-def test_summarize_report_omits_full_target_for_verified_subset():
-    summary = summarize_report(
-        {
-            "total_instances": 500,
-            "submitted_instances": 5,
-            "completed_instances": 5,
-            "resolved_instances": 2,
-            "unresolved_instances": 3,
-            "empty_patch_instances": 0,
-            "error_instances": 0,
-        }
-    )
-
-    assert summary["target_name"] is None
-    assert summary["resolved_delta_vs_target"] is None
-
-
-def test_summarize_report_target_requires_matching_dataset_split_and_model():
+def test_verified_target_requires_the_exact_full_evaluation():
     report = {
         "total_instances": 500,
         "submitted_instances": 500,
@@ -119,12 +47,20 @@ def test_summarize_report_target_requires_matching_dataset_split_and_model():
         "error_instances": 0,
     }
 
-    for overrides in (
-        {"dataset": "org/other-dataset"},
-        {"split": "validation"},
-        {"model": "org/other-model"},
-    ):
-        summary = summarize_report(report, **overrides)
+    matching = summarize_report(report)
+    assert matching["resolution_rate"] == 191 / 500
+    assert matching["target_name"] == "klear-agentforge-8b-sft-swe-bench-verified"
+    assert matching["resolved_delta_vs_target"] == 0
+
+    mismatches = (
+        (report, {"dataset": "org/other-dataset"}),
+        (report, {"dataset_revision": "different-revision"}),
+        (report, {"split": "validation"}),
+        (report, {"model": "org/other-model"}),
+        ({**report, "submitted_instances": 5, "completed_instances": 5}, {}),
+    )
+    for candidate_report, overrides in mismatches:
+        summary = summarize_report(candidate_report, **overrides)
         assert summary["target_name"] is None
         assert summary["resolved_delta_vs_target"] is None
 
@@ -149,6 +85,15 @@ def test_run_evaluation_moves_harness_report_from_eval_cwd(tmp_path, monkeypatch
         return subprocess.CompletedProcess(command, 0)
 
     monkeypatch.setattr(evaluate.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        evaluate,
+        "validate_evaluator_dataset_snapshot",
+        lambda _args: {
+            "dataset_revision": _args.dataset_revision,
+            "task_rows_sha256": "a" * 64,
+            "selected_task_count": 500,
+        },
+    )
 
     summary = evaluate.run_evaluation(
         args(
@@ -165,6 +110,7 @@ def test_run_evaluation_moves_harness_report_from_eval_cwd(tmp_path, monkeypatch
     assert summary["report_path"] == str(expected_report)
     assert summary["status"] == "ok"
     assert summary["resolved_instances"] == 1
+    assert summary["task_rows_sha256"] == "a" * 64
 
 
 def test_run_evaluation_rejects_a_failed_harness(tmp_path, monkeypatch):
@@ -176,6 +122,15 @@ def test_run_evaluation_rejects_a_failed_harness(tmp_path, monkeypatch):
         "run",
         lambda command, cwd, check: subprocess.CompletedProcess(command, 9),
     )
+    monkeypatch.setattr(
+        evaluate,
+        "validate_evaluator_dataset_snapshot",
+        lambda _args: {
+            "dataset_revision": _args.dataset_revision,
+            "task_rows_sha256": "a" * 64,
+            "selected_task_count": 500,
+        },
+    )
 
     with pytest.raises(RuntimeError, match="exited with status 9"):
         evaluate.run_evaluation(
@@ -184,4 +139,19 @@ def test_run_evaluation_rejects_a_failed_harness(tmp_path, monkeypatch):
                 report_dir=str(tmp_path / "reports"),
                 instance_ids=[],
             )
+        )
+
+
+def test_snapshot_validation_rejects_current_rows_that_differ_from_pin(monkeypatch):
+    pinned = [{"instance_id": "a", "problem_statement": "pinned"}]
+    current = [{"instance_id": "a", "problem_statement": "current"}]
+
+    def fake_load(_dataset, _split, *, revision):
+        return pinned if revision else current
+
+    monkeypatch.setattr(evaluate, "load_swebench_tasks", fake_load)
+
+    with pytest.raises(RuntimeError, match="do not match the requested revision"):
+        evaluate.validate_evaluator_dataset_snapshot(
+            args(instance_ids=["a"], instance_ids_file=None)
         )

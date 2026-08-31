@@ -27,7 +27,7 @@ esac
 
 export CACHE_BUILD_MODE="$MODE"
 export CACHE_BUILD_MAX_WORKERS="${CACHE_BUILD_MAX_WORKERS:-$DEFAULT_WORKERS}"
-export SWESMITH_TASK_IDS_FILE="${SWESMITH_TASK_IDS_FILE:-${TASK_IDS_FILE:-data/splits/train_instance_ids.txt}}"
+export SWESMITH_TASK_IDS_FILE="${SWESMITH_TASK_IDS_FILE:-${TASK_IDS_FILE:-data/splits/swesmith_cache_5700_instance_ids.txt}}"
 SUMMARY_ROOT="${CACHE_BUILD_SUMMARY_ROOT:-$DEBUG_DEPO_SCRATCH/cache-builds}"
 mkdir -p "$SUMMARY_ROOT"
 job_label="${PBS_JOBID:-manual}"

@@ -306,7 +306,20 @@ cluster/env/*
 !cluster/env/load.sh
 !cluster/env/*.example
 
+# Track portable cloud configuration, but keep machine-specific overrides local.
+cloud/local.env
+# Retain the former path in case an older checkout is overlaid locally.
+hyperstack/local.env
+
 # Generated evaluation reports can contain absolute machine paths.
 results/**
 !results/**/
 !results/**/.gitkeep
+!results/README.md
+!results/generate-hyperparameter-results.py
+!results/swesmith_screening_200/comparison.json
+!results/swesmith_screening_200/*.csv
+!results/swesmith_confirmation_500/*.json
+!results/swesmith_confirmation_500/*.csv
+!results/swebench_verified_500/*.json
+!results/swebench_verified_500/*.csv

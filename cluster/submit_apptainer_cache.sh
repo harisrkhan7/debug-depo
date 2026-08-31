@@ -25,7 +25,7 @@ source cluster/resolve_run_paths.sh
 
 DATASETS="${CACHE_BUILD_DATASETS:-both}"
 MAX_WORKERS="${CACHE_BUILD_MAX_WORKERS:-$DEFAULT_WORKERS}"
-SWESMITH_TASK_IDS_FILE="${SWESMITH_TASK_IDS_FILE:-${TASK_IDS_FILE:-data/splits/train_instance_ids.txt}}"
+SWESMITH_TASK_IDS_FILE="${SWESMITH_TASK_IDS_FILE:-${TASK_IDS_FILE:-data/splits/swesmith_cache_5700_instance_ids.txt}}"
 EXPECTED_SWEBENCH_TASKS="${EXPECTED_SWEBENCH_TASKS:-500}"
 
 if [[ ! "$MAX_WORKERS" =~ ^[1-9][0-9]*$ ]]; then

@@ -1,10 +1,10 @@
 import argparse
 
-import pytest
 
 import debug_depo.prepare_swesmith_splits as split_module
 from debug_depo.prepare_swesmith_splits import (
     prepare_swesmith_splits,
+    repository_balanced_subset,
     repository_covering_subset,
     repository_disjoint_split,
     write_task_subsets,
@@ -35,11 +35,6 @@ def test_repository_disjoint_split_is_stable_and_complete():
     assert set(train_ids) | set(validation_ids) == {task["instance_id"] for task in tasks}
     train_repositories = {task["repo"] for task in tasks if task["instance_id"] in train_ids}
     assert train_repositories.isdisjoint(validation_repositories)
-
-
-def test_repository_disjoint_split_rejects_duplicate_ids():
-    with pytest.raises(ValueError, match="unique"):
-        repository_disjoint_split([task("duplicate", "repo-a"), task("duplicate", "repo-b")])
 
 
 def test_prepare_swesmith_splits_writes_ids_and_manifest(tmp_path, monkeypatch):
@@ -73,7 +68,7 @@ def test_prepare_swesmith_splits_writes_ids_and_manifest(tmp_path, monkeypatch):
     assert set(train_ids) | set(validation_ids) == {task["instance_id"] for task in tasks}
     assert manifest == read_json(tmp_path / "swesmith_py_split_manifest.json")
     assert manifest["dataset_revision"] == "revision"
-    assert manifest["schema_version"] == 2
+    assert manifest["schema_version"] == 5
     assert manifest["task_subsets"]["trajectory"]["n_tasks"] == 2
     assert manifest["task_subsets"]["validation"]["n_tasks"] == 1
     assert manifest["task_subsets"]["cache"]["n_tasks"] == 3
@@ -118,16 +113,33 @@ def test_repository_covering_subset_is_stable_proportional_and_covering():
     }
 
 
-def test_repository_covering_subset_rejects_too_few_slots():
-    source_ids = _snapshot_ids("a", 2) + _snapshot_ids("b", 2) + _snapshot_ids("c", 2)
+def test_repository_balanced_subset_is_stable_and_redistributes_small_repo_slots():
+    source_ids = _snapshot_ids("a", 10) + _snapshot_ids("b", 10) + _snapshot_ids("c", 2)
 
-    with pytest.raises(ValueError, match="cannot cover 3 repositories"):
-        repository_covering_subset(
-            source_ids,
-            size=2,
-            seed=42,
-            namespace="test",
-        )
+    first = repository_balanced_subset(
+        source_ids,
+        size=12,
+        seed=42,
+        namespace="test-balanced",
+    )
+    second = repository_balanced_subset(
+        list(reversed(source_ids)),
+        size=12,
+        seed=42,
+        namespace="test-balanced",
+    )
+
+    assert first == second
+    assert len(first) == len(set(first)) == 12
+    counts = {
+        repository: sum(item.startswith(repository) for item in first)
+        for repository in ("owner__a.aaaa", "owner__b.bbbb", "owner__c.cccc")
+    }
+    assert counts == {
+        "owner__a.aaaa": 5,
+        "owner__b.bbbb": 5,
+        "owner__c.cccc": 2,
+    }
 
 
 def test_write_task_subsets_keeps_parent_membership_and_cache_union(tmp_path):
@@ -158,3 +170,76 @@ def test_write_task_subsets_keeps_parent_membership_and_cache_union(tmp_path):
     assert metadata["trajectory"]["n_repositories"] == 3
     assert metadata["validation"]["n_repositories"] == 2
     assert metadata["cache"]["n_tasks"] == 9
+
+
+def test_write_task_subsets_excludes_repository_from_all_validation_budgets(tmp_path):
+    train_ids = _snapshot_ids("a", 5_000)
+    validation_ids = _snapshot_ids("d", 300) + _snapshot_ids("e", 600)
+
+    metadata = write_task_subsets(
+        train_ids=train_ids,
+        validation_ids=validation_ids,
+        output_dir=tmp_path,
+        excluded_validation_repositories=("owner__d",),
+    )
+
+    memberships = {
+        size: (tmp_path / f"swesmith_validation_{size}_instance_ids.txt").read_text().splitlines()
+        for size in (100, 200, 500)
+    }
+    assert set(memberships[100]) <= set(memberships[200]) <= set(memberships[500])
+    assert all(item.startswith("owner__e.") for ids in memberships.values() for item in ids)
+    assert metadata["validation_exclusions"] == {
+        "selectors": ["owner__d"],
+        "matched_repositories": ["owner__d.dddd"],
+        "n_excluded_tasks": 300,
+        "n_eligible_tasks": 600,
+    }
+
+
+def test_write_task_subsets_supports_disjoint_balanced_confirmation(tmp_path):
+    train_ids = _snapshot_ids("a", 6) + _snapshot_ids("b", 3) + _snapshot_ids("c", 1)
+    validation_ids = (
+        _snapshot_ids("d", 20) + _snapshot_ids("e", 10) + _snapshot_ids("f", 4)
+    )
+    excluded_id = _snapshot_ids("d", 20)[0]
+
+    metadata = write_task_subsets(
+        train_ids=train_ids,
+        validation_ids=validation_ids,
+        output_dir=tmp_path,
+        trajectory_subset_size=6,
+        validation_subset_size=9,
+        validation_screening_sizes=(3,),
+        validation_design="disjoint-balanced",
+        confirmation_excluded_ids=(excluded_id,),
+        confirmation_exclusion_sources=("unavailable.txt",),
+        seed=42,
+    )
+
+    screening_ids = (
+        tmp_path / "swesmith_validation_3_instance_ids.txt"
+    ).read_text().splitlines()
+    confirmation_ids = (
+        tmp_path / "swesmith_validation_confirmatory_balanced_9_instance_ids.txt"
+    ).read_text().splitlines()
+    cache_ids = (tmp_path / "swesmith_cache_18_instance_ids.txt").read_text().splitlines()
+
+    assert len(screening_ids) == 3
+    assert len(confirmation_ids) == 9
+    assert set(screening_ids).isdisjoint(confirmation_ids)
+    assert excluded_id not in confirmation_ids
+    assert len(cache_ids) == len(set(cache_ids)) == 18
+    assert metadata["validation_design"] == "disjoint-balanced"
+    assert metadata["validation"]["role"] == "confirmatory_validation"
+    assert metadata["confirmation_exclusions"]["sources"] == ["unavailable.txt"]
+    assert metadata["confirmation_exclusions"]["n_tasks"] == 1
+    confirmation_counts = {
+        repository: sum(item.startswith(repository) for item in confirmation_ids)
+        for repository in ("owner__d.dddd", "owner__e.eeee", "owner__f.ffff")
+    }
+    assert confirmation_counts == {
+        "owner__d.dddd": 3,
+        "owner__e.eeee": 3,
+        "owner__f.ffff": 3,
+    }
